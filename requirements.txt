@@ -1,0 +1,85 @@
+# =========================
+# Core Backend (FastAPI)
+# =========================
+fastapi==0.115.6
+uvicorn[standard]==0.30.6
+python-multipart==0.0.12
+pydantic==2.10.3
+python-dotenv==1.0.1
+
+# =========================
+# Authentication & Security
+# =========================
+passlib[bcrypt]==1.7.4
+bcrypt==4.1.2
+python-jose==3.3.0
+email-validator==2.2.0
+
+# =========================
+# Database
+# =========================
+pymongo==4.10.1
+dnspython==2.7.0
+
+# =========================
+# Video & Audio Processing
+# =========================
+yt-dlp==2024.12.23
+opencv-python==4.10.0.84
+ffmpeg-python==0.2.0
+moviepy==1.0.3
+pydub==0.25.1
+
+# =========================
+# Speech to Text (Whisper)
+# =========================
+openai-whisper==20240930
+tiktoken==0.8.0
+
+# =========================
+# Machine Learning Core
+# =========================
+numpy<2
+scipy==1.11.4
+torch>=2.1.0
+torchvision>=0.16.0
+torchaudio>=2.1.0
+
+# =========================
+# Embeddings & Vector DB
+# =========================
+sentence-transformers==2.6.1
+chromadb==0.5.20
+
+# =========================
+# OCR (Images from Web / Video)
+# =========================
+easyocr==1.7.2
+Pillow==10.4.0
+
+# =========================
+# LLM / RAG Utilities
+# =========================
+langchain==0.2.16
+langchain-community==0.2.16
+langchain-text-splitters==0.2.4
+
+# =========================
+# Web Scraping & Parsing
+# =========================
+requests==2.32.3
+beautifulsoup4==4.12.3
+lxml==5.3.0
+
+# =========================
+# File Handling (PDF / PPT)
+# =========================
+pypdf==4.3.1
+python-pptx==1.0.2
+
+# =========================
+# Utilities
+# =========================
+tqdm==4.67.1
+rich==13.9.4
+uuid==1.30
