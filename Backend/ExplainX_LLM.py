@@ -3,16 +3,33 @@ from retrieve import retrieve_combined
 from pdf_chroma_ingest import ChromaMultimodalDB
 from dotenv import load_dotenv
 import os
+import logging
 
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 API = os.getenv("API")
-print(API)
+
+# Validate API key is configured
+if not API:
+    logger.error("CRITICAL: Google API key is not configured!")
+    logger.error("Please set the API environment variable with your Google Gemini API key")
+    logger.error("Get one from: https://ai.google.dev/")
+    raise ValueError("Missing required environment variable: API")
 
 class LLM:
     def __init__(self):
-        genai.configure(api_key=API)
-        self.MODEL_NAME = "models/gemini-2.5-flash"
+        if not API:
+            raise ValueError("Google API key not configured. Set the API environment variable.")
+        
+        try:
+            genai.configure(api_key=API)
+            self.MODEL_NAME = "models/gemini-2.5-flash"
+        except Exception as e:
+            logger.error(f"Failed to configure Google Generative AI: {str(e)}")
+            raise
 
 
     def summarize_video(self,video_id):

@@ -1,13 +1,23 @@
 import os
 import bcrypt
+import logging
 from datetime import datetime, timedelta
 from jose import jwt, JWTError
+
+# Setup logging
+logger = logging.getLogger(__name__)
 
 # ===========================
 # ENV CONFIG (safe defaults)
 # ===========================
 
-SECRET_KEY = os.environ.get("SECRET_KEY", "change-this-secret-key!!!")
+SECRET_KEY = os.environ.get("SECRET_KEY")
+if not SECRET_KEY:
+    logger.warning("WARNING: SECRET_KEY not set in environment variables")
+    logger.warning("Using default key - this is INSECURE for production!")
+    logger.warning("Set the SECRET_KEY environment variable for production use")
+    SECRET_KEY = "change-this-secret-key!!!"
+
 ALGORITHM = os.environ.get("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(
     os.environ.get("ACCESS_TOKEN_EXPIRE_MINUTES", 60 * 24 * 7)

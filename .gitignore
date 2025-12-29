@@ -46,3 +46,6 @@ venv
 yolov8m.pt
 yolov8n.pt
 
+
+#__pycache__
+__pycache__
