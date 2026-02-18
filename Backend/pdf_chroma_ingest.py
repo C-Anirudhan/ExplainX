@@ -1,131 +1,163 @@
-import os
-import json
+import os, json, re, uuid
 import chromadb
 import torch
 from PIL import Image
 from sentence_transformers import SentenceTransformer
 from transformers import CLIPProcessor, CLIPModel
 
+# -----------------------------------------
+# Hierarchical Smart Chunking
+# -----------------------------------------
+
+def split_paragraphs(text):
+    return [p.strip() for p in re.split(r"\n{2,}", text) if len(p.strip()) > 40]
+
+def sentence_chunks(text):
+    return re.split(r"(?<=[.!?])\s+", text)
+
+def sliding_chunks(tokens, size=420, overlap=120):
+    i = 0
+    while i < len(tokens):
+        yield tokens[i:i+size]
+        i += size - overlap
+
+# -----------------------------------------
+# Chat-Scoped Multimodal Chroma DB
+# -----------------------------------------
 
 class ChromaMultimodalDB:
-    def __init__(self, name, collection_name="multimodal_pdf"):
-        """
-        json_path  : path to page-wise JSON
-        image_dir  : directory containing images (image1.jpg, image2.png, etc.)
-        """
+    def __init__(self, chat_id, doc_uuid=None):
+        self.data = {}
+        self.chat_id = chat_id
+        self.doc_uuid = doc_uuid
+        self.collection_name = f"chat_{chat_id}"
 
-        self.json_path = f"langbase_json/{name}.json"
-        self.image_dir = f"langbase_json/ExtractedImages/"
-        self.collection_name = collection_name
+        # 🔥 CHANGED: Use PersistentClient to save to local disk
+        self.client = chromadb.PersistentClient(path="./chroma_db_storage")
+        
+        self.collection = self.client.get_or_create_collection(self.collection_name)
 
-        # Load JSON
-        with open(self.json_path, "r", encoding="utf-8") as f:
-            self.data = json.load(f)
+        self.text_model = SentenceTransformer("sentence-transformers/all-mpnet-base-v2")
+        self.clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
+        self.clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
 
-        # Initialize Chroma
-        self.client = chromadb.Client()
-        self.collection = self.client.get_or_create_collection(collection_name)
+        if self.doc_uuid:
+            self.json_path = f"langbase_json/{self.doc_uuid}.json"
+            self.image_dir = f"langbase_json/ExtractedImages/{self.doc_uuid}/"
+            # Check if file exists before opening to prevent errors
+            if os.path.exists(self.json_path):
+                with open(self.json_path, "r", encoding="utf-8") as f:
+                    self.data = json.load(f)
 
-        # Load models
-        self.text_model = SentenceTransformer(
-            "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
-        )
-
-        self.clip_model = CLIPModel.from_pretrained(
-            "openai/clip-vit-base-patch32"
-        )
-        self.clip_processor = CLIPProcessor.from_pretrained(
-            "openai/clip-vit-base-patch32"
-        )
-
-    # --------------------------------------------------
-    # INGEST TEXT
-    # --------------------------------------------------
+    # -----------------------------------------
+    # TEXT INGEST
+    # -----------------------------------------
     def ingest_text(self):
         for page, content in self.data.items():
-            text = content["text"]
+            raw_text = content.get("text", "")
             images = content.get("images", [])
 
-            if not text.strip():
-                continue
+            for p_id, para in enumerate(split_paragraphs(raw_text)):
+                tokens = " ".join(sentence_chunks(para)).split()
 
-            embedding = self.text_model.encode(text).tolist()
+                for w_id, token_chunk in enumerate(sliding_chunks(tokens)):
+                    chunk_text = " ".join(token_chunk)
+                    emb = self.text_model.encode(chunk_text).tolist()
 
-            self.collection.add(
-                ids=[page],
-                embeddings=[embedding],
-                documents=[text],
-                metadatas=[{
-                    "type": "text",
-                    "page": page,
-                    "images": ",".join(images)
-                }]
-            )
+                    cid = f"{self.chat_id}_{uuid.uuid4()}"
 
-        print("✅ Text ingestion completed")
+                    self.collection.add(
+                        ids=[cid],
+                        documents=[chunk_text],
+                        embeddings=[emb],
+                        metadatas=[{
+                            "chat_id": self.chat_id,
+                            "doc_uuid": self.doc_uuid,
+                            "page": page,
+                            "paragraph": p_id,
+                            "window": w_id,
+                            "images": ",".join(images),
+                            "type": "text"
+                        }]
+                    )
+        print("✅ Hierarchical chat-brain chunks ingested")
 
-    # --------------------------------------------------
-    # INGEST IMAGES
-    # --------------------------------------------------
+    # -----------------------------------------
+    # IMAGE INGEST
+    # -----------------------------------------
     def ingest_images(self):
-        for filename in os.listdir(self.image_dir):
-            image_id, ext = os.path.splitext(filename)
-            image_path = os.path.join(self.image_dir, filename)
+        if not os.path.exists(self.image_dir):
+            print(f"Image directory not found: {self.image_dir}")
+            return
 
-            if not ext.lower() in [".jpg", ".jpeg", ".png", ".webp"]:
-                continue
+        for fname in os.listdir(self.image_dir):
+            path = os.path.join(self.image_dir, fname)
+            image_id,_ = os.path.splitext(fname)
 
-            image = Image.open(image_path).convert("RGB")
+            try:
+                img = Image.open(path).convert("RGB")
+                inputs = self.clip_processor(images=img, return_tensors="pt")
 
-            inputs = self.clip_processor(
-                images=image,
-                return_tensors="pt"
-            )
+                with torch.no_grad():
+                    emb = self.clip_model.get_image_features(**inputs)[0].tolist()
 
-            with torch.no_grad():
-                embedding = self.clip_model.get_image_features(**inputs)
+                self.collection.add(
+                    ids=[f"{self.chat_id}_{self.doc_uuid}_img_{image_id}"],
+                    embeddings=[emb],
+                    metadatas=[{
+                        "chat_id": self.chat_id,
+                        "doc_uuid": self.doc_uuid,
+                        "type": "image",
+                        "image_id": image_id
+                    }]
+                )
+            except Exception as e:
+                print(f"Skipping image {fname}: {e}")
 
-            self.collection.add(
-                ids=[image_id],  # image1, image2 ...
-                embeddings=[embedding[0].tolist()],
-                metadatas=[{
-                    "type": "image",
-                    "image_name": image_id
-                }]
-            )
+        print("✅ Chat-brain image embeddings ingested")
 
-        print("✅ Image ingestion completed")
-
-    # --------------------------------------------------
-    # INGEST ALL
-    # --------------------------------------------------
     def ingest_all(self):
         self.ingest_text()
         self.ingest_images()
-        print("🚀 Full ingestion completed")
+        print("🚀 Full multimodal chat-brain ingestion complete")
 
-    # --------------------------------------------------
-    # QUERY TEXT
-    # --------------------------------------------------
-    def query_text(self, query, top_k=3):
-        query_embedding = self.text_model.encode(query).tolist()
+    # -----------------------------------------
+    # CHAT-SCOPED QUERY (BUG-2 FIXED)
+    # -----------------------------------------
+    def query_text(self, query, top_k=10):
+        q_emb = self.text_model.encode(query).tolist()
+        res = self.collection.query(
+            query_embeddings=[q_emb],
+            n_results=top_k,
+            where={"chat_id": {"$eq": self.chat_id}}
+        )
+        return res["documents"][0] if res["documents"] else []
 
-        results = self.collection.query(
-            query_embeddings=[query_embedding],
-            n_results=top_k
+    def query_grouped(self, question, top_k=25, only_doc=None):
+        q_emb = self.text_model.encode(question).tolist()
+
+        # If active_doc exists, search ONLY inside that doc
+        where_filter = {"chat_id": {"$eq": self.chat_id}}
+
+        if only_doc:
+            where_filter = {
+                "$and": [
+                    {"chat_id": {"$eq": self.chat_id}},
+                    {"doc_uuid": {"$eq": only_doc}}
+                ]
+            }
+
+        res = self.collection.query(
+            query_embeddings=[q_emb],
+            n_results=top_k,
+            where=where_filter,
+            include=["documents","metadatas"]
         )
 
-        return results
+        grouped = {}
+        if res["documents"]:
+            for doc, meta in zip(res["documents"][0], res["metadatas"][0]):
+                doc_id = meta.get("doc_uuid", "unknown")
+                grouped.setdefault(doc_id, []).append(doc)
 
-    # --------------------------------------------------
-    # GET IMAGES BY IDS
-    # --------------------------------------------------
-    def get_images(self, image_ids):
-        return self.collection.get(ids=image_ids)
-
-if __name__ == "__main__":
-    obj = ChromaMultimodalDB("zero plastic article")
-    obj.ingest_all()
-    res = obj.query_text("summarize all pages",top_k=10)
-    print(res)
-    
+        return grouped

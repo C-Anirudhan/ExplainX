@@ -10,6 +10,12 @@ dist
 coverage
 *.lcov
 
+Backend/chroma_db/
+Backend/chroma_db_storage/
+**/__pycache__/
+*.mp3
+*.wav
+
 # logs
 logs
 _.log
@@ -49,3 +55,34 @@ yolov8n.pt
 
 #__pycache__
 __pycache__
+Backend/__pycache__/*
+Backend/__pycache__/*
+
+#downloads
+downloads/*
+Backend/downloads/*
+#frames
+frames/*
+
+#langbase_json
+langbase_json/*
+Backend/langbase_json/*
+
+#temp
+temp/*
+
+#auth.db
+auth.db
+
+
+#chroma_db
+Backend/chroma_db/*
+
+#models
+yolov8m.pt
+yolov8n.pt
+
+Backend/chroma_db_storage/*
+*.mp3
+*.wav
+*.pyc

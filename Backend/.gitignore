@@ -49,3 +49,10 @@ yolov8n.pt
 
 #__pycache__
 __pycache__
+
+Backend/chroma_db/
+Backend/chroma_db_storage/
+Backend/__pycache__/
+**/__pycache__/
+*.mp3
+*.wav

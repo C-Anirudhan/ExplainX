@@ -1,11 +1,17 @@
+import os
+os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+os.environ["TRANSFORMERS_FORCE_SAFE_LOADING"] = "1"
+os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
+os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "0"
+
 from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import uuid, os, shutil
+import uuid, shutil
 from datetime import datetime
-from process_ppt import Ppt2Pdf
 
-# ======== PDF / VIDEO / RAG ========
+# Import your custom modules
+from process_ppt import Ppt2Pdf
 from pdf_ppt_extract import Pdf2Json
 from pdf_chroma_ingest import ChromaMultimodalDB
 from download_video import VideoDownloader
@@ -14,47 +20,24 @@ from ingest_and_query_chroma import VectorDB
 from ExplainX_LLM import LLM
 from web_scrapper import FullPageExtractor
 
-# ======== MONGODB ========
 from mongo import users_col, sessions_col
-
-# ======== AUTH UTILS ========
-from auth_utils import (
-    hash_password,
-    verify_password,
-    create_access_token,
-    decode_token,
-)
-
-# ============================================================
-# FASTAPI INIT
-# ============================================================
+from auth_utils import hash_password, verify_password, create_access_token, decode_token
 
 app = FastAPI()
-
 app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"]
 )
-
-# ============================================================
-# CONSTANTS
-# ============================================================
 
 UPLOAD_DIR = "downloads/"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 video_extensions = {
-    ".mp4", ".m4v", ".mov", ".avi", ".mkv", ".webm", ".flv", ".wmv",
-    ".mpg", ".mpeg", ".3gp", ".3g2", ".ts", ".mts", ".m2ts", ".vob",
-    ".ogv", ".f4v", ".rm", ".rmvb", ".asf", ".divx", ".xvid", ".dv",
-    ".amv", ".yuv"
+    ".mp4",".m4v",".mov",".avi",".mkv",".webm",".flv",".wmv",".mpg",".mpeg",".3gp",".3g2",".ts",".mts",".m2ts",
+    ".vob",".ogv",".f4v",".rm",".rmvb",".asf",".divx",".xvid",".dv",".amv",".yuv"
 }
 
 # ============================================================
-# AUTH SCHEMAS
+# AUTH
 # ============================================================
 
 class SignupRequest(BaseModel):
@@ -74,33 +57,20 @@ class AskRequest(BaseModel):
     session_id: str
     question: str
 
-# ============================================================
-# AUTH DEPENDENCY (OPTIONS SAFE)
-# ============================================================
-
-def get_current_user(
-    request: Request,
-    authorization: str = Header(None)
-):
+def get_current_user(request: Request, authorization: str = Header(None)):
     if request.method == "OPTIONS":
         return None
-
     if not authorization:
-        raise HTTPException(status_code=401, detail="Missing Authorization header")
-
+        raise HTTPException(401, "Missing Authorization")
     try:
         scheme, token = authorization.split()
-        if scheme.lower() != "bearer":
-            raise Exception()
         payload = decode_token(token)
-        email = payload.get("sub")
+        email = payload["sub"]
     except:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-
+        raise HTTPException(401, "Invalid token")
     user = users_col.find_one({"email": email})
     if not user:
-        raise HTTPException(status_code=401, detail="User not found")
-
+        raise HTTPException(401, "User not found")
     return user
 
 # ============================================================
@@ -110,192 +80,166 @@ def get_current_user(
 @app.post("/api/signup")
 def signup(req: SignupRequest):
     if users_col.find_one({"email": req.email}):
-        raise HTTPException(status_code=400, detail="Email already registered")
-
+        raise HTTPException(400, "Email exists")
     users_col.insert_one({
         "email": req.email,
         "username": req.username,
         "password_hash": hash_password(req.password),
         "created_at": datetime.utcnow()
     })
-
-    return {"message": "User created successfully"}
+    return {"message": "User created"}
 
 @app.post("/api/login")
 def login(req: LoginRequest):
     user = users_col.find_one({"email": req.email})
     if not user or not verify_password(req.password, user["password_hash"]):
-        raise HTTPException(status_code=400, detail="Invalid credentials")
-
+        raise HTTPException(400, "Invalid credentials")
     token = create_access_token({"sub": user["email"]})
-
-    return {
-        "access_token": token,
-        "token_type": "bearer",
-        "user": {
-            "name": user["username"],
-            "email": user["email"]
-        },
-    }
+    return {"access_token": token, "token_type": "bearer",
+            "user": {"name": user["username"], "email": user["email"]}}
 
 @app.post("/api/me")
 def api_me(current_user=Depends(get_current_user)):
-    return {
-        "name": current_user["username"],
-        "email": current_user["email"]
-    }
+    return {"name": current_user["username"], "email": current_user["email"]}
 
 # ============================================================
 # SESSIONS
 # ============================================================
 
 @app.post("/api/new-session")
-def api_new_session(current_user=Depends(get_current_user)):
-    session_id = str(uuid.uuid4())
+def new_session(current_user=Depends(get_current_user)):
 
-    sessions_col.insert_one({
-        "_id": session_id,
+    sessions_col.delete_many({
         "user_email": current_user["email"],
-        "video_file": None,
+        "files": {"$eq": []} 
+    })
+    
+    sid = str(uuid.uuid4())
+    sessions_col.insert_one({
+        "_id": sid,
+        "user_email": current_user["email"],
+        "files": [],
         "messages": [],
         "created_at": datetime.utcnow()
     })
+    return {"session_id": sid}
 
-    return {"session_id": session_id}
-
-# ============================================================
-# 🟢 SIDEBAR HISTORY (THIS FIXES YOUR ISSUE)
-# ============================================================
+# In server.py / newserver.py
 
 @app.get("/api/sessions")
 def api_sessions(current_user=Depends(get_current_user)):
-    sessions = sessions_col.find(
-        {"user_email": current_user["email"]}
-    ).sort("created_at", -1)
+    res = []
+    
+    '''sessions_col.delete_many({
+        "user_email": current_user["email"],
+        "files": {"$eq": []} 
+    })'''
 
-    result = []
-
-    for s in sessions:
+    # Fetch sessions for the user
+    user_sessions = sessions_col.find({"user_email": current_user["email"]}).sort("created_at", -1)
+    
+    for s in user_sessions:
+        # safely find the first user message for the title
         messages = s.get("messages", [])
+        
+        # FIX: We filter specifically for DICTIONARIES to avoid the TypeError
+        first_user_msg = next(
+            (m for m in messages if isinstance(m, dict) and m.get("role") == "user"), 
+            None
+        )
+        
+        if first_user_msg and "text" in first_user_msg:
+            title = first_user_msg["text"][:40]
+        else:
+            title = "New Conversation"
 
-        title = "New Conversation"
-        for m in messages:
-            if m.get("role") == "user":
-                title = m.get("text", "")[:40]
-                break
-
-        result.append({
-            "id": s["_id"],                      # ✔ sidebar expects this
-            "title": title,                      # ✔ sidebar expects this
-            "timestamp": s.get("created_at"),    # ✔ sidebar expects this
-            "files": [s["video_file"]] if s.get("video_file") else []
+        res.append({
+            "id": s["_id"], 
+            "title": title, 
+            "timestamp": s["created_at"], 
+            "files": s.get("files", [])
         })
-
-    return result
+    
+    return res
 
 # ============================================================
-# VIDEO / PDF PIPELINE
+# PIPELINES
 # ============================================================
 
-def process_video_pipeline(session_id: str, user_email: str, input_path: str,ext):
+def process_video_pipeline(session_id, user_email, input_path, ext):
     filename = os.path.basename(input_path)
-
+    
+    # Run ingestion logic
     gen_json(filename).main()
     VectorDB(filename).ingest_json()
-
     summary = LLM().summarize_video(filename)
-
+    
+    # FIX: Merged duplicate "$push" keys into one dictionary
     sessions_col.update_one(
-        {"_id": session_id, "user_email": user_email},
-        {"$set": {"video_file": filename, "ext": ext},
-         "$push": {"messages": {
-             "role": "assistant",
-             "text": summary,
-             "time": datetime.utcnow()
-         }}}
+        {"_id": session_id},
+        {
+            "$push": {
+                "files": {"name": filename, "ext": ext},
+                "messages": {"role": "assistant", "text": summary, "time": datetime.utcnow()}
+            }
+        }
     )
-
     return summary
 
-def process_pdf_ppt_pipeline(session_id: str, user_email: str, input_path: str,ext):
+def process_pdf_ppt_pipeline(session_id, user_email, input_path, ext):
     filename = os.path.basename(input_path)
-
+    
+    # Run ingestion logic
     Pdf2Json(filename).extract()
-    ChromaMultimodalDB(filename).ingest_text()
-
-    summary = LLM().summarize_pdf(filename)
-
+    ChromaMultimodalDB(session_id, filename).ingest_text()
+    
+    # Even without a summary, we must confirm upload to the user and DB
+    msg_text = "Document Uploaded Successfully..."
+    
+    # FIX: Merged duplicate "$push" keys into one dictionary
     sessions_col.update_one(
-        {"_id": session_id, "user_email": user_email},
-        {"$set": {"video_file": filename,"ext":ext},
-         "$push": {"messages": {
-             "role": "assistant",
-             "text": summary,
-             "time": datetime.utcnow()
-         }}}
+        {"_id": session_id},
+        {
+            "$push": {
+                "files": {"name": filename, "ext": ext},
+                "messages": {"role": "assistant", "text": msg_text, "time": datetime.utcnow()}
+            }
+        }
     )
-
-    return summary
+    return msg_text
 
 # ============================================================
-# UPLOAD ROUTES
+# UPLOAD
 # ============================================================
-
-@app.post("/api/upload/link")
-def upload_link(req: LinkUpload, current_user=Depends(get_current_user)):
-    session = sessions_col.find_one({
-        "_id": req.session_id,
-        "user_email": current_user["email"]
-    })
-
-    if not session:
-        raise HTTPException(status_code=403, detail="Invalid session")
-    link =req.video_link
-    ans=""
-    for i in link.split('/'):
-        ans += i.replace('.','')
-        ans += ' '
-    if 'youtube' in ans.lower().split():
-        file_path,ext = VideoDownloader(link).yt_download()
-        print(file_path, ext)
-        file_path = f"{file_path}{ext}"
-        summary = process_video_pipeline(req.session_id, current_user["email"], file_path, ext)
-        return {"status": "processed", "summary": summary}
-    else:
-        web = FullPageExtractor(link)
-        filename,result = web.extract() 
-        summary = result["content"]["full_text"]
-        return {"status": "processed", "summary": summary}
 
 @app.post("/api/upload/file")
-def upload_file(
-    session_id: str = Form(...),
-    file: UploadFile = File(...),
-    current_user=Depends(get_current_user)
-):
-    session = sessions_col.find_one({
-        "_id": session_id,
-        "user_email": current_user["email"]
-    })
-
-    if not session:
-        raise HTTPException(status_code=403, detail="Invalid session")
+def upload_file(session_id: str = Form(...), file: UploadFile = File(...), current_user=Depends(get_current_user)):
+    session = sessions_col.find_one({"_id":session_id,"user_email":current_user["email"]})
+    if not session: raise HTTPException(403,"Invalid session")
 
     ext = os.path.splitext(file.filename)[1].lower()
-    saved_path = os.path.join(UPLOAD_DIR, f"{uuid.uuid4()}{ext}")
-
-    with open(saved_path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
+    path = os.path.join(UPLOAD_DIR,f"{uuid.uuid4()}{ext}")
+    
+    with open(path,"wb") as f: shutil.copyfileobj(file.file,f)
 
     if ext in video_extensions:
-        return {"summary": process_video_pipeline(session_id, current_user["email"], saved_path,ext)}
-    elif ext == ".pdf":
-        return {"summary": process_pdf_ppt_pipeline(session_id, current_user["email"], saved_path[:-4],ext)}
-    elif ext == ".ppt" or ext == ".pptx":
-        Ppt2Pdf(saved_path[:-len(ext)],ext[1:]).convert_ppt_to_pdf()
-        return {"summary": process_pdf_ppt_pipeline(session_id, current_user["email"], saved_path[:-len(ext)],ext)}
+        summary = process_video_pipeline(session_id, current_user["email"], path, ext)
+    
+    elif ext in [".pdf",".ppt",".pptx"]:
+        # FIX: Use splitext to safely get the base path (handles .pptx correctly)
+        base_path = os.path.splitext(path)[0]
+        
+        if ext != ".pdf":
+            # Convert PPT to PDF
+            Ppt2Pdf(base_path, ext[1:]).convert_ppt_to_pdf()
+        
+        # Pass the base path (without extension) to the pipeline
+        summary = process_pdf_ppt_pipeline(session_id, current_user["email"], base_path, ext)
+    
     else:
-        raise HTTPException(status_code=400, detail="Unsupported file type")
+        raise HTTPException(400,"Unsupported")
+
+    return {"summary": summary}
 
 # ============================================================
 # ASK + HISTORY
@@ -303,51 +247,66 @@ def upload_file(
 
 @app.post("/api/ask")
 def api_ask(req: AskRequest, current_user=Depends(get_current_user)):
-    session = sessions_col.find_one({
-        "_id": req.session_id,
-        "user_email": current_user["email"]
-    })
-
+    # 1. Validate Session
+    session = sessions_col.find_one({"_id": req.session_id, "user_email": current_user["email"]})
     if not session:
-        raise HTTPException(status_code=403, detail="Invalid session")
+        raise HTTPException(403, "Invalid session")
 
-    if not session.get("video_file"):
-        raise HTTPException(status_code=400, detail="No file attached")
+    # 2. Analyze File Types
+    files = session.get("files", [])
+    video_files = [f for f in files if f['ext'] in video_extensions]
+    doc_files = [f for f in files if f['ext'] not in video_extensions]
 
-    if session["ext"] in video_extensions:
-        answer = LLM().ask_question(session["video_file"], req.question)
-        sessions_col.update_one(
-            {"_id": req.session_id},
-            {"$push": {"messages": [
-                {"role": "user", "text": req.question, "time": datetime.utcnow()},
-                {"role": "assistant", "text": answer, "time": datetime.utcnow()}
-            ]}}
-        )   
+    answer = ""
+    llm = LLM()
 
-        return {"answer": answer}
-    elif session["ext"] in ['.pdf','.ppt','.pptx']:
-        answer = LLM().ask_question_ppt_pdf(session["video_file"], req.question)
-        sessions_col.update_one(
-            {"_id": req.session_id},
-            {"$push": {"messages": [
-                {"role": "user", "text": req.question, "time": datetime.utcnow()},
-                {"role": "assistant", "text": answer, "time": datetime.utcnow()}
-            ]}}
-        )
-        return {"answer": answer}
-    return {"answer": None}
+    # 3. Route the Request (Video vs PDF vs Hybrid)
+    try:
+        if video_files and not doc_files:
+            # SCENARIO A: Only Videos
+            target_video = video_files[-1]["name"] 
+            print(f"Routing to Video DB for: {target_video}")
+            # Ensure LLM class has ask_question_video method!
+            answer = llm.ask_question(target_video, req.question)
+
+        elif doc_files and not video_files:
+            # SCENARIO B: Only Docs
+            print("Routing to PDF/PPT DB")
+            answer = llm.ask_question_ppt_pdf(req.session_id, req.question)
+
+        elif video_files and doc_files:
+            # SCENARIO C: Hybrid (Prioritize most recent upload)
+            last_file = files[-1]
+            if last_file['ext'] in video_extensions:
+                 answer = llm.ask_question(last_file["name"], req.question)
+            else:
+                 answer = llm.ask_question_ppt_pdf(req.session_id, req.question)
+        else:
+            answer = "I don't see any files in this session yet. Please upload a PDF, PPT, or Video."
+
+    except Exception as e:
+        print(f"Error during QA: {e}")
+        answer = "I encountered an error while processing your request."
+
+    # 4. Save Chat History (FIXED: Using $each to prevent nested arrays)
+    sessions_col.update_one(
+        {"_id": req.session_id},
+        {
+            "$push": {
+                "messages": {
+                    "$each": [
+                        {"role": "user", "text": req.question, "time": datetime.utcnow()},
+                        {"role": "assistant", "text": answer, "time": datetime.utcnow()}
+                    ]
+                }
+            }
+        }
+    )
+
+    return {"answer": answer}
 
 @app.get("/api/history")
-def api_history(session_id: str, current_user=Depends(get_current_user)):
-    session = sessions_col.find_one({
-        #"_id": session_id,
-        "user_email": current_user["email"]
-    })
-
-    if not session:
-        raise HTTPException(status_code=403, detail="Access denied")
-
-    return {
-        "session_id": session_id,
-        "messages": session.get("messages", [])
-    }
+def api_history(session_id:str, current_user=Depends(get_current_user)):
+    s = sessions_col.find_one({"_id":session_id,"user_email":current_user["email"]})
+    if not s: raise HTTPException(403,"Denied")
+    return {"session_id":session_id,"messages":s.get("messages",[])}

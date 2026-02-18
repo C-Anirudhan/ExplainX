@@ -12,7 +12,7 @@ EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 def get_embedder():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"[INFO] Embeddings on {device}")
-    return SentenceTransformer(EMBED_MODEL, device=device)
+    return SentenceTransformer(EMBED_MODEL, device=device,trust_remote_code=True)
 
 # ---------------------------------------------------
 # Connect to Chroma
@@ -29,20 +29,23 @@ def format_results(results, header):
         out += f"\n• {r['document']}"
     return out
 
+# ---------------------------------------------------
+# SAFE, CONTRACT-LOCKED RETRIEVER
+# ---------------------------------------------------
+def retrieve_combined(video_id: str, question: str, top_k_transcript=10, top_k_frames=10):
+    question = str(question)
+    # 🔐 Hard type safety
+    video_id = str(video_id)
+    question = str(question)
 
-# ---------------------------------------------------
-# Retrieve transcript + frame results separately
-# ---------------------------------------------------
-def retrieve_combined(video_id, question, top_k_transcript=10, top_k_frames=10):
     client = get_client()
     col = client.get_collection(COLLECTION_NAME)
-    embedder = get_embedder()
+    embedder = SentenceTransformer(EMBED_MODEL)
+
 
     q_emb = embedder.encode([question], convert_to_numpy=True).tolist()
 
-    # -----------------------------
-    # SEARCH TRANSCRIPT SEGMENTS
-    # -----------------------------
+    # ----------------------------- TRANSCRIPTS
     transcript_results = col.query(
         query_embeddings=q_emb,
         n_results=top_k_transcript,
@@ -64,9 +67,7 @@ def retrieve_combined(video_id, question, top_k_transcript=10, top_k_frames=10):
         for i in range(len(tr_docs))
     ]
 
-    # -----------------------------
-    # SEARCH FRAME YOLO + OCR DOCS
-    # -----------------------------
+    # ----------------------------- FRAMES
     frame_results = col.query(
         query_embeddings=q_emb,
         n_results=top_k_frames,
@@ -88,9 +89,7 @@ def retrieve_combined(video_id, question, top_k_transcript=10, top_k_frames=10):
         for i in range(len(fr_docs))
     ]
 
-    # -----------------------------
-    # Combine readable text
-    # -----------------------------
+    # ----------------------------- FORMAT
     formatted_transcript = format_results(transcript_hits, "TRANSCRIPT SEGMENTS")
     formatted_frames = format_results(frame_hits, "VISUAL (YOLO + OCR) FRAMES")
 
@@ -104,21 +103,3 @@ def retrieve_combined(video_id, question, top_k_transcript=10, top_k_frames=10):
     )
 
     return combined_text, transcript_hits, frame_hits
-
-
-
-
-# ---------------------------------------------------
-# CLI usage (manual testing)
-# ---------------------------------------------------
-if __name__ == "__main__":
-    import sys
-
-    video_id = sys.argv[1]
-    question = sys.argv[2]
-    top_k = int(sys.argv[3]) if len(sys.argv) > 3 else 10
-
-    combined_text, tr, fr = retrieve_combined(video_id, question, top_k, top_k)
-
-    print("\n========== COMBINED OUTPUT ==========\n")
-    print(combined_text)

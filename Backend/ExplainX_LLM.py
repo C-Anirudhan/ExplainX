@@ -1,220 +1,213 @@
+import os
 import google.generativeai as genai
 from retrieve import retrieve_combined
 from pdf_chroma_ingest import ChromaMultimodalDB
 from dotenv import load_dotenv
-import os
+from mongo import sessions_col
+from format_answer import clean_llm_text
+from ingest_and_query_chroma import VectorDB
+
 
 
 load_dotenv()
 API = os.getenv("API")
-print(API)
+
+# ---------------- PROMPT MODES ---------------- #
+
+def build_prompt(context, question, mode="regulatory"):
+    if mode == "narrative":
+        return f"""
+You are a professional multimedia narrator.
+
+CONTEXT:
+{context}
+
+
+TASK:
+{question}
+
+Rules:
+• Chronological storytelling
+• Friendly language
+• Use emojis
+• Subheadings allowed
+• Explain visuals & speech
+"""
+    else:
+        return f"""
+You are a corporate regulatory analyst.
+
+CONTEXT:
+{context}
+
+TASK:
+{question}
+
+Rules:
+• No emojis
+• No emotional language
+• Preserve numbers exactly
+• Preserve corporate/legal wording
+• Use bullet points only
+• Do not add any interpretation
+"""
+
+
+# ---------------- LLM CORE ---------------- #
 
 class LLM:
     def __init__(self):
         genai.configure(api_key=API)
         self.MODEL_NAME = "models/gemini-2.5-flash"
 
+    # ---------------- Helpers ---------------- #
 
-    def summarize_video(self,video_id):
-
-        print("\n[INFO] Retrieving relevant transcript + frame chunks...")
-        combined_text, transcripts, frames = retrieve_combined(
-            video_id,
-            top_k_transcript=500,
-            top_k_frames=500,
-            question="summarize the video fully"
-        )
-
-        print(f"[INFO] Transcript chunks retrieved: {len(transcripts)}")
-        print(f"[INFO] Frame chunks retrieved: {len(frames)}")
-
-        # Extract actual text from dicts
-        transcript_texts = [t["document"] for t in transcripts]
-        frame_texts = [f["document"] for f in frames]
-
-        # Build final LLM message
+    def _quick_answer(self, context, question):
         prompt = f"""
-    You are an AI expert in video understanding and multimodal reasoning.
+Use the context below to answer briefly.
 
-    Below is the retrieved context for a video.
+CONTEXT:
+{context}
 
-    ==================== AUDIO TRANSCRIPTS ====================
-    {chr(10).join(transcript_texts)}
+QUESTION: {question}
+"""
+        return genai.GenerativeModel(self.MODEL_NAME).generate_content(prompt).text.strip()
 
-    ==================== FRAME (YOLO + OCR) DATA ====================
-    {chr(10).join(frame_texts)}
-
-    ==================== TASK ====================
-    Create a full, detailed summary of the video.
-
-    Requirements:
-    1. Chronological summary covering the entire video.
-    2. Use BOTH transcript + YOLO/OCR frame data,but dont mention any YOLO/OCR words directly in any part of explanation.
-    3. Understand the video yourself by combining transcription and YOLO/OCR data.
-    4. Describe what visually happens in each part.
-    5. Explain what is spoken, what objects appear, and any scene transitions.
-    6. Write naturally like a human narrator.
-    7. Don't give output as big paragraphs instead give output as points.Give sub heading for some content if required. 
-    8. Use bulletin points to indicate the starting of a point. Use emojis for interactive conversation.
-
-    Start now.
-    """
-
-        print("[INFO] Sending to LLM for summarization...")
-        model = genai.GenerativeModel(self.MODEL_NAME)
-        response = model.generate_content(prompt)
-
-
-        return response.text
-    
-    def ask_question(self,video_id,question):
-        print("\n[INFO] Retrieving relevant transcript + frame chunks...")
-        combined_text, transcripts, frames = retrieve_combined(
-            video_id,
-            top_k_transcript=200,
-            top_k_frames=300,
-            question=question
-        )
-
-        print(f"[INFO] Transcript chunks retrieved: {len(transcripts)}")
-        print(f"[INFO] Frame chunks retrieved: {len(frames)}")
-
-        # Extract actual text from dicts
-        transcript_texts = [t["document"] for t in transcripts]
-        frame_texts = [f["document"] for f in frames]
-
-        # Build final LLM message
+    def _final_answer(self, context, question):
         prompt = f"""
-    You are an AI expert in video understanding and multimodal reasoning.
+Use the context below to answer accurately.
 
-    Below is the retrieved context for a video.
+CONTEXT:
+{context}
 
-    ==================== AUDIO TRANSCRIPTS ====================
-    {chr(10).join(transcript_texts)}
+QUESTION: {question}
+"""
+        return genai.GenerativeModel(self.MODEL_NAME).generate_content(prompt).text.strip()
 
-    ==================== FRAME (YOLO + OCR) DATA ====================
-    {chr(10).join(frame_texts)}
+    # ---------------- VIDEO ---------------- #
 
-    ==================== TASK ====================
-    Answer the below question based on the video content.
+    def summarize_video(self, video_id):
+        _, transcripts, frames = retrieve_combined(video_id, "summarize the video fully", 500, 500)
+        context = "\n".join([t["document"] for t in transcripts] + [f["document"] for f in frames])
+        raw = genai.GenerativeModel(self.MODEL_NAME).generate_content(
+            build_prompt(context, "Summarize the full video", mode="narrative")
+        ).text
+        return clean_llm_text(raw)
 
-    question: {question}
+    def ask_question(self, video_id, question):
+        _, transcripts, frames = retrieve_combined(video_id, question, 30, 30)
+        context = "\n".join([t["document"] for t in transcripts] + [f["document"] for f in frames])
+        raw = genai.GenerativeModel(self.MODEL_NAME).generate_content(
+            build_prompt(context, question, mode="regulatory")
+        ).text
+        return clean_llm_text(raw)
 
-    Requirements:
-    1. Correct answer for the question using the given data.
-    2. Use BOTH transcript + YOLO/OCR frame data,but dont mention any YOLO/OCR words directly in any part of explanation.
-    3. Understand the content yourself by combining transcription and YOLO/OCR data.
-    4. Describe what visually happens.
-    5. Explain what is spoken, what objects appear, and any scene transitions based on the question.
-    6. Write naturally like a human narrator.
-    7. Don't give output as big paragraphs instead give output as points.Give sub heading for some points if required.
-    8. Use '**' to indicate the starting of a point. Use emojis for interactive conversation.
+    # ---------------- PDF ---------------- #
 
-    Answer now.
-    """
+    def summarize_pdf(self, chat_id):
+        db = ChromaMultimodalDB(chat_id)
+        chunks = db.query_text("Summarize all pages", top_k=20)
+        raw = genai.GenerativeModel(self.MODEL_NAME).generate_content(
+            build_prompt("\n".join(chunks), "Summarize the PDF", mode="regulatory")
+        ).text
+        return clean_llm_text(raw)
 
-        print("[INFO] Sending to LLM for summarization...")
-        model = genai.GenerativeModel(self.MODEL_NAME)
-        response = model.generate_content(prompt)
+    # ---------------- MULTI-DOC SMART QA ---------------- #
 
+    def ask_question_ppt_pdf(self, chat_id, question):
+        session = sessions_col.find_one({"_id": chat_id})
+        active_doc = session.get("active_doc")
 
-        return response.text
-    def summarize_pdf(self,video_id):
-        print("\n[INFO] Retrieving relevant text + images...")
-        db = ChromaMultimodalDB(video_id)
-        res = db.query_text("Summarize all pages",top_k=8)
+        db = ChromaMultimodalDB(chat_id)
+        grouped = db.query_grouped(question, only_doc=None)
 
-        print(f"[INFO] Text chunks retrieved")
-        print(f"[INFO] Images retrieved")
+        # Nothing found
+        if not grouped:
+            return "No relevant information found in the uploaded documents."
 
-        
-        
+        # One document — auto-lock
+        if len(grouped) == 1:
+            fname, chunks = list(grouped.items())[0]
+            sessions_col.update_one({"_id": chat_id}, {"$set": {"active_doc": fname}})
+            return clean_llm_text(self._final_answer("\n".join(chunks), question))
 
-    
-        prompt = f"""
-        You are an AI expert in pdf understanding and multimodal reasoning.
+        # Multiple docs — ask user
+        msg = "Your question matches multiple documents:\n\n"
+        for fname, chunks in grouped.items():
+            short = self._quick_answer("\n".join(chunks[:6]), question)
+            msg += f"• {fname}: {short}\n"
+        msg += "\nPlease reply with the document name you meant."
+        return clean_llm_text(msg)
 
-        Below is the retrieved context for a pdf.
+    def ask_question_multimodal(self, session_id, video_filename, question):
+        """
+        Retrieves context from BOTH Video and PDF databases and fuses them.
+        """
+        print(f"--- Multimodal Query: {question} ---")
 
-        ==================== TEXT ====================
-        {res}
+        # 1. Get Video Context
+        # We try to use the VectorDB. If it fails or returns nothing, we warn the user.
+        video_context = ""
+        try:
+            vid_db = VectorDB(video_filename)
+            # Ensure your VectorDB class has a 'query' or 'similarity_search' method!
+            # If your VectorDB uses 'similarity_search', change '.query' to '.similarity_search' below.
+            vid_results = vid_db.query(session_id,question) 
+            
+            if isinstance(vid_results, list):
+                # Handle list of objects (e.g., LangChain Documents)
+                video_context = "\n".join([doc.page_content if hasattr(doc, 'page_content') else str(doc) for doc in vid_results])
+            else:
+                video_context = str(vid_results)
+        except Exception as e:
+            print(f"Error fetching video context: {e}")
+            video_context = "No video context available due to error."
 
-        
+        # 2. Get PDF/PPT Context
+        pdf_context = ""
+        try:
+            # We use filename="" because we query by session_id in ChromaMultimodalDB
+            pdf_db = ChromaMultimodalDB(session_id) 
+            
+            # FIXED: Used 'query_text' to match your summarize_pdf method
+            pdf_results = pdf_db.query_text(question, top_k=5)
+            
+            if isinstance(pdf_results, list):
+                pdf_context = "\n".join(pdf_results)
+            else:
+                pdf_context = str(pdf_results)
+        except Exception as e:
+            print(f"Error fetching PDF context: {e}")
+            pdf_context = "No document context available due to error."
 
-        ==================== TASK ====================
-        Create a full, detailed summary of the pdf.
+        # 3. Construct the "Collaboration" System Prompt
+        system_prompt = f"""
+You are a highly intelligent researcher assistant capable of synthesizing information from multiple sources.
 
-        Requirements:
-        1. Chronological summary covering the entire pdf.
-        2. Understand the pdf yourself by text given to you.
-        3. Describe what visually happens in each topic.
-        4. Explain what is the content present in the pdf.
-        5. Write naturally like a human narrator.
-        6. Don't give output as big paragraphs instead give output as points.Give sub heading for some content if required. 
-        7. Use '**' to indicate the starting of a point. Use emojis for interactive conversation.
+You have two distinct sources of information:
+1. A VIDEO TRANSCRIPT (visual/auditory content).
+2. A DOCUMENT (PDF/PPT slides or text).
 
-        Start now.
+Your goal is to answer the user's question by COLLABORATING information from both sources.
+
+--- VIDEO CONTEXT ---
+{video_context}
+
+--- DOCUMENT CONTEXT ---
+{pdf_context}
+
+--- INSTRUCTIONS ---
+- If the answer is found in both, mention how they support each other.
+- If the answer is only in one, specify which source it came from.
+- If the Video explains 'X' and the Document explains 'Y', synthesize them to explain 'X and Y'.
+- Do not hallucinate. If the answer isn't in either context, say so.
         """
 
-        print("[INFO] Sending to LLM for summarization...")
-        model = genai.GenerativeModel(self.MODEL_NAME)
-        response = model.generate_content(prompt)
-
-        answer = str(response.text).replace('\n','\n\n')
-
-        return answer
-    
-    def ask_question_ppt_pdf(self,video_id,question):
-        print("\n[INFO] Retrieving relevant text + images...")
-        db = ChromaMultimodalDB(video_id)
-        res = db.query_text(question,top_k=10)
-
-        print(f"[INFO] Text chunks retrieved from ask   ",res)
-        print(f"[INFO] Images retrieved")
-        # Build final LLM message
-        prompt = f"""
-    You are an AI expert in video understanding and multimodal reasoning.
-
-    Below is the retrieved context for a video.
-
-    ==================== TEXT ====================
-    {res}
-
-    ==================== TASK ====================
-    Answer the below question based on the content.
-
-    question: {question}
-
-    Requirements:
-    1. Correct answer for the question using the given data.
-    2. Understand the content yourself using the TEXT provided.
-    3. Describe what visually happens.
-    4. Explain what is spoken  based on the question.
-    5. Write naturally like a human narrator.
-    6. Don't give output as big paragraphs instead give output as points.Give sub heading for some points if required.
-    7. Use '**' to indicate the starting of a point. Use emojis for interactive conversation.
-
-    Answer now.
-    """
-
-        print("[INFO] Sending to LLM for summarization...")
-        model = genai.GenerativeModel(self.MODEL_NAME)
-        response = model.generate_content(prompt)
-
-
-        return response.text
-
-
-
-# ----------------------------- MAIN -----------------------------
-if __name__ == "__main__":
-    test=LLM()
-    print("📌 VIDEO SUMMARIZER (RAG + Gemini 2.5 Flash)")
-    print("--------------------------------------------")
-
-    video_name = input("Enter video name EXACTLY as stored in Chroma: ").strip()
-
-    if not video_name:
-        print("❌ Video name cannot be empty.")
-    else:
-        test.summarize_video(video_name)
+        # 4. Generate Answer using Gemini (FIXED: Added actual generation call)
+        try:
+            full_prompt = f"{system_prompt}\n\nUSER QUESTION: {question}"
+            raw_response = genai.GenerativeModel(self.MODEL_NAME).generate_content(full_prompt).text
+            return clean_llm_text(raw_response)
+        except Exception as e:
+            print(f"LLM Generation Error: {e}")
+            return "I was unable to generate a response due to an internal error."

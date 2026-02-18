@@ -26,6 +26,7 @@ const useChatStore = create((set, get) => ({
     } else {
       document.documentElement.classList.remove("dark");
     }
+    localStorage.setItem("theme", theme);
   },
 
   toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
@@ -51,75 +52,65 @@ const useChatStore = create((set, get) => ({
   // CREATE NEW SESSION (BACKEND)
   // ============================
   startNewConversation: async () => {
-    const current = get();
+    try {
+        // 1. Create on Backend
+        const res = await apiService.createSession();
+        const newSessionId = res.session_id;
 
-    // Save previous session if needed
-    if (current.currentSessionId && current.messages.length > 0) {
-      const sessionToSave = {
-        id: current.currentSessionId,
-        messages: current.messages,
-        files: current.uploadedFiles,
-        timestamp: new Date().toISOString(),
-        title: current.uploadedFiles[0]?.name || "Conversation",
-      };
+        // 2. Refresh Sidebar List
+        const sessions = await apiService.getSessions();
+        set({ sessions });
 
-      set((state) => ({
-        sessions: [sessionToSave, ...state.sessions],
-      }));
+        // 3. Update State
+        localStorage.setItem("session_id", newSessionId);
+
+        set({
+            currentSessionId: newSessionId,
+            messages: [
+                {
+                    role: "system",
+                    content: "Welcome To ExplainX",
+                    timestamp: new Date().toISOString(),
+                },
+            ],
+            uploadedFiles: [],
+        });
+
+        return newSessionId;
+    } catch (err) {
+        console.error("Error creating session", err);
     }
-
-    // GET REAL SESSION ID FROM BACKEND
-    const res = await apiService.createSession();
-    const newSessionId = res.session_id;
-
-    // 🔥 UPDATE LOCAL STORAGE
-    localStorage.setItem("session_id", newSessionId);
-
-
-    set({
-      currentSessionId: newSessionId,
-      messages: [
-        {
-          role: "system",
-          content: "Welcome To ExplainX",
-          timestamp: new Date().toISOString(),
-        },
-      ],
-      uploadedFiles: [],
-    });
-
-    return newSessionId;
   },
 
   // ============================
-  // LOAD SESSION
+  // LOAD SESSION (FIXED MAPPING)
   // ============================
-  loadSession: (sessionId) => {
-    const current = get();
+  loadSession: async (sessionId) => {
+    set({ isTyping: true });
+    try {
+        // 1. Fetch real history from Backend
+        const history = await apiService.getHistory(sessionId);
+        
+        // 2. MAP BACKEND DATA TO FRONTEND FORMAT
+        // Backend uses 'text' & 'time', Frontend uses 'content' & 'timestamp'
+        const cleanMessages = (history.messages || []).map(msg => ({
+            role: msg.role,
+            content: msg.text || msg.content || "",  // 🔥 FIX: Use 'text' if 'content' is missing
+            timestamp: msg.time || msg.timestamp || new Date().toISOString()
+        }));
 
-    // Save current session before switching
-    if (current.currentSessionId && current.messages.length > 0) {
-      const saved = {
-        id: current.currentSessionId,
-        messages: current.messages,
-        files: current.uploadedFiles,
-        timestamp: new Date().toISOString(),
-      };
-
-      set((state) => ({
-        sessions: state.sessions.map((s) =>
-          s.id === current.currentSessionId ? saved : s
-        ),
-      }));
-    }
-
-    const session = current.sessions.find((s) => s.id === sessionId);
-    if (session) {
-      set({
-        currentSessionId: session.id,
-        messages: session.messages,
-        uploadedFiles: session.files || [],
-      });
+        // 3. Update State
+        set({
+            currentSessionId: sessionId,
+            messages: cleanMessages,
+            uploadedFiles: [],
+        });
+        
+        localStorage.setItem("session_id", sessionId);
+    } catch (error) {
+        console.error("Failed to load session:", error);
+    } finally {
+        set({ isTyping: false });
     }
   },
 
@@ -133,69 +124,47 @@ const useChatStore = create((set, get) => ({
   // ============================
   // INITIALIZE APP
   // ============================
-  // ============================
-// INITIALIZE APP (🔥 FIXED)
-// ============================
-initialize: async () => {
-  // Load theme
-  const theme = localStorage.getItem("theme") || "dark";
-  get().setTheme(theme);
+  initialize: async () => {
+    // Load theme
+    const theme = localStorage.getItem("theme") || "dark";
+    get().setTheme(theme);
 
-  // Load sidebar/chat history (optional UI history)
-  const saved = localStorage.getItem("explainx_sessions");
-  if (saved) {
+    // Load Sidebar List from BACKEND
     try {
-      set({ sessions: JSON.parse(saved) });
-    } catch {}
-  }
+        const sessions = await apiService.getSessions();
+        set({ sessions });
+    } catch (error) {
+        console.error("Failed to fetch sessions list:", error);
+    }
 
-  // 🔥 SESSION FIX STARTS HERE
-  let sessionId = localStorage.getItem("session_id");
-
-  if (!sessionId) {
-    // Create session ONLY ONCE
-    const res = await apiService.createSession();
-    sessionId = res.session_id;
-    localStorage.setItem("session_id", sessionId);
-  }
-
-  // Load backend chat history
-  try {
-    const history = await apiService.getHistory(sessionId);
-    set({
-      currentSessionId: sessionId,
-      messages:
-        history.messages?.length > 0
-          ? history.messages
-          : [
-              {
-                role: "system",
-                content: "Welcome To ExplainX",
-                timestamp: new Date().toISOString(),
-              },
-            ],
-      uploadedFiles: [],
-    });
-  } catch {
-    set({
-      currentSessionId: sessionId,
-      messages: [
-        {
-          role: "system",
-          content: "Welcome To ExplainX",
-          timestamp: new Date().toISOString(),
-        },
-      ],
-      uploadedFiles: [],
-    });
-  }
-},
-
-  // Save history
-  persistSessions: () => {
+    // Determine Session ID
+    let sessionId = localStorage.getItem("session_id");
     const { sessions } = get();
-    localStorage.setItem("explainx_sessions", JSON.stringify(sessions));
+    
+    // Check if the saved session actually exists in our backend list
+    const exists = sessions.find(s => s.id === sessionId);
+
+    if (!sessionId || !exists) {
+        if (sessions.length > 0) {
+            // If we have sessions, load the most recent one
+            sessionId = sessions[0].id;
+        } else {
+            // Only create a new one if the list is totally empty
+            const res = await apiService.createSession();
+            sessionId = res.session_id;
+            // Refresh list
+            const newSessions = await apiService.getSessions();
+            set({ sessions: newSessions });
+        }
+        localStorage.setItem("session_id", sessionId);
+    }
+
+    // Load the messages for the selected session
+    await get().loadSession(sessionId);
   },
+
+  // Empty function to prevent errors if UI calls it
+  persistSessions: () => {},
 }));
 
 export default useChatStore;

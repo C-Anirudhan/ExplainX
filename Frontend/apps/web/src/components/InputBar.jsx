@@ -13,12 +13,16 @@ export default function InputBar() {
   const [linkInput, setLinkInput] = useState("");
   const fileInputRef = useRef(null);
 
-  const { addMessage, setTyping, currentSessionId, addFile, persistSessions } =
-    useChatStore();
+  // We only pull actions from the hook. 
+  // We will read currentSessionId directly from state when needed to avoid stale closures.
+  const { addMessage, setTyping, addFile, persistSessions } = useChatStore();
 
-  console.log("first_sessionId", currentSessionId);
+  // Helper to get the REAL current session ID
+  const getActiveSessionId = () => {
+    return useChatStore.getState().currentSessionId || localStorage.getItem("session_id");
+  };
 
-  // ---------- FILE UPLOAD (UNCHANGED LOGIC) ----------
+  // ---------- FILE UPLOAD ----------
   const handleFileSelect = async (event) => {
     const files = Array.from(event.target.files || []);
     if (files.length === 0) return;
@@ -27,6 +31,7 @@ export default function InputBar() {
     setUploading(true);
 
     try {
+      // 1. Optimistic UI Update
       files.forEach((file) => {
         addMessage({
           role: "user",
@@ -40,8 +45,9 @@ export default function InputBar() {
         addFile(file);
       });
 
+      // 2. Upload Logic
       for (const file of files) {
-        const sessionId = currentSessionId || localStorage.getItem("session_id");
+        const sessionId = getActiveSessionId(); // 🔥 GET LATEST ID
 
         if (!sessionId) {
           addMessage({
@@ -85,7 +91,7 @@ export default function InputBar() {
     setShowLinkModal(false);
 
     try {
-      const sessionId = currentSessionId || localStorage.getItem("session_id");
+      const sessionId = getActiveSessionId(); // 🔥 GET LATEST ID
 
       addMessage({ role: "user", content: `Uploaded link: ${linkInput}` });
 
@@ -111,7 +117,7 @@ export default function InputBar() {
     }
   };
 
-  // ---------- CHAT SUBMIT (UNCHANGED) ----------
+  // ---------- CHAT SUBMIT ----------
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!inputValue.trim() || uploading) return;
@@ -119,11 +125,12 @@ export default function InputBar() {
     const question = inputValue.trim();
     setInputValue("");
 
+    // 1. Optimistic Update
     addMessage({ role: "user", content: question });
     setTyping(true);
 
     try {
-      const sessionId = currentSessionId || localStorage.getItem("session_id");
+      const sessionId = getActiveSessionId(); // 🔥 GET LATEST ID
 
       if (!sessionId) {
         addMessage({
@@ -134,13 +141,14 @@ export default function InputBar() {
         return;
       }
 
+      // 2. Send Request
       const response = await apiService.askQuestion(sessionId, question);
 
       if (!response || !response.answer) {
         addMessage({
           role: "assistant",
           content:
-            "⚠️ I couldn't generate an answer. This usually means no relevant data was retrieved from the video.",
+            "⚠️ I couldn't generate an answer. This usually means no relevant data was retrieved.",
         });
       } else {
         addMessage({
