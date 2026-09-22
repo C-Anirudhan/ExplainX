@@ -1,5 +1,7 @@
 import os
+import time
 from google import genai
+from google.genai import types
 from retrieve import retrieve_combined
 from pdf_chroma_ingest import ChromaMultimodalDB
 from dotenv import load_dotenv
@@ -59,15 +61,35 @@ class LLM:
     def __init__(self):
         self.client = genai.Client(api_key=API)
         self.MODEL_NAME = "gemini-2.5-flash"
+        self.FALLBACK_MODEL_NAME = "gemini-2.5-flash-lite"
 
     def _generate(self, prompt):
-        response = self.client.models.generate_content(
-            model=self.MODEL_NAME,
-            contents=prompt,
-        )
-        if not response.text:
-            raise RuntimeError("Gemini returned no text response")
-        return response.text.strip()
+        last_error = None
+        for model_name in (self.MODEL_NAME, self.FALLBACK_MODEL_NAME):
+            for delay_seconds in (0, 1, 2):
+                if delay_seconds:
+                    time.sleep(delay_seconds)
+                try:
+                    response = self.client.models.generate_content(
+                        model=model_name,
+                        contents=prompt,
+                        config=types.GenerateContentConfig(
+                            automatic_function_calling=types.AutomaticFunctionCallingConfig(
+                                disable=True
+                            )
+                        ),
+                    )
+                    if not response.text:
+                        raise RuntimeError("Gemini returned no text response")
+                    return response.text.strip()
+                except Exception as error:
+                    last_error = error
+                    if "429" not in str(error) and "503" not in str(error):
+                        raise
+
+        raise RuntimeError(
+            "Gemini is temporarily unavailable after retrying both configured models."
+        ) from last_error
 
     # ---------------- Helpers ---------------- #
 

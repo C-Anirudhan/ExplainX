@@ -3,6 +3,13 @@ os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 os.environ["TRANSFORMERS_FORCE_SAFE_LOADING"] = "1"
 os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
 os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "0"
+os.environ["ANONYMIZED_TELEMETRY"] = "False"
+os.environ["CHROMA_TELEMETRY"] = "False"
+
+import logging
+logging.getLogger("chromadb").setLevel(logging.ERROR)
+logging.getLogger("chromadb.telemetry.product.posthog").setLevel(logging.ERROR)
+
 
 from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -286,7 +293,10 @@ def api_ask(req: AskRequest, current_user=Depends(get_current_user)):
 
     except Exception as e:
         print(f"Error during QA: {e}")
-        answer = "I encountered an error while processing your request."
+        if "temporarily unavailable" in str(e) or "503" in str(e) or "429" in str(e):
+            answer = "The AI service is temporarily busy. Please try your question again in a moment."
+        else:
+            answer = "I encountered an error while processing your request."
 
     # 4. Save Chat History (FIXED: Using $each to prevent nested arrays)
     sessions_col.update_one(

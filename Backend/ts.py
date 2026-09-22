@@ -1,5 +1,6 @@
 import chromadb
 from chromadb import PersistentClient
+from chromadb.config import Settings
 from sentence_transformers import SentenceTransformer
 import torch
 
@@ -12,7 +13,10 @@ EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 # CLIENT + EMBEDDINGS
 # ---------------------------------------------------
 def get_client():
-    return PersistentClient(path=CHROMA_DIR)
+    return PersistentClient(
+        path=CHROMA_DIR,
+        settings=Settings(anonymized_telemetry=False),
+    )
 
 
 def get_embedder():

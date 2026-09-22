@@ -1,5 +1,6 @@
 import torch
 from chromadb import PersistentClient
+from chromadb.config import Settings
 from sentence_transformers import SentenceTransformer
 
 CHROMA_DIR = "./chroma_db"
@@ -18,7 +19,10 @@ def get_embedder():
 # Connect to Chroma
 # ---------------------------------------------------
 def get_client():
-    return PersistentClient(path=CHROMA_DIR)
+    return PersistentClient(
+        path=CHROMA_DIR,
+        settings=Settings(anonymized_telemetry=False),
+    )
 
 # ---------------------------------------------------
 # Convert result list into clean text for LLM
