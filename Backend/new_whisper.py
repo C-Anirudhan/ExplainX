@@ -22,3 +22,4 @@ def run_whisper_process(_, audio_path, output_json_path):
     except Exception as e:
         print("🔥 ERROR IN WHISPER PROCESS:", e, flush=True)
         traceback.print_exc()
+        raise

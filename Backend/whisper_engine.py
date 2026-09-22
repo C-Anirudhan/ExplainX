@@ -2,16 +2,24 @@
 
 import os
 import json
+import torch
 from faster_whisper import WhisperModel
 
 
 def run_whisper(audio_path, output_json_path=None):
-    print("[INFO] Loading Whisper (medium FP16 GPU)...")
+    cuda_available = torch.cuda.is_available()
+    device = "cuda" if cuda_available else "cpu"
+    compute_type = "int8_float16" if cuda_available else "int8"
+
+    print(
+        f"[INFO] Loading Whisper on {device} ({compute_type})...",
+        flush=True,
+    )
 
     model = WhisperModel(
         "medium",
-        device="cuda",
-        compute_type="int8_float16"
+        device=device,
+        compute_type=compute_type,
     )
 
     print("[INFO] Transcribing...")

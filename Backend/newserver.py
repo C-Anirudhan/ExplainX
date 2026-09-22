@@ -3,6 +3,14 @@ os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 os.environ["TRANSFORMERS_FORCE_SAFE_LOADING"] = "1"
 os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
 os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "0"
+os.environ["ANONYMIZED_TELEMETRY"] = "False"
+os.environ["CHROMA_TELEMETRY"] = "False"
+os.environ["CHROMA_TELEMETRY_IMPL"] = "None"
+
+import logging
+logging.getLogger("chromadb").setLevel(logging.ERROR)
+logging.getLogger("chromadb.telemetry.product.posthog").setLevel(logging.ERROR)
+
 
 from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,7 +28,7 @@ from ingest_and_query_chroma import VectorDB
 from ExplainX_LLM import LLM
 from web_scrapper import FullPageExtractor
 
-from mongo import users_col, sessions_col
+from mongo import users_col, sessions_col, content_details_col
 from auth_utils import hash_password, verify_password, create_access_token, decode_token
 
 app = FastAPI()
@@ -218,9 +226,21 @@ def upload_file(session_id: str = Form(...), file: UploadFile = File(...), curre
     if not session: raise HTTPException(403,"Invalid session")
 
     ext = os.path.splitext(file.filename)[1].lower()
-    path = os.path.join(UPLOAD_DIR,f"{uuid.uuid4()}{ext}")
+    generated_uuid = str(uuid.uuid4())
+    path = os.path.join(UPLOAD_DIR,f"{generated_uuid}{ext}")
     
     with open(path,"wb") as f: shutil.copyfileobj(file.file,f)
+    
+    # Store content details for real filename lookup
+    content_details_col.insert_one({
+        "uuid": f"{generated_uuid}{ext}",
+        "base_uuid": generated_uuid,
+        "real_name": file.filename,
+        "session_id": session_id,
+        "user_email": current_user["email"],
+        "content_type": ext,
+        "uploaded_at": datetime.utcnow()
+    })
 
     if ext in video_extensions:
         summary = process_video_pipeline(session_id, current_user["email"], path, ext)
@@ -260,33 +280,19 @@ def api_ask(req: AskRequest, current_user=Depends(get_current_user)):
     answer = ""
     llm = LLM()
 
-    # 3. Route the Request (Video vs PDF vs Hybrid)
+    # 3. Route the Request via Omni Search
     try:
-        if video_files and not doc_files:
-            # SCENARIO A: Only Videos
-            target_video = video_files[-1]["name"] 
-            print(f"Routing to Video DB for: {target_video}")
-            # Ensure LLM class has ask_question_video method!
-            answer = llm.ask_question(target_video, req.question)
-
-        elif doc_files and not video_files:
-            # SCENARIO B: Only Docs
-            print("Routing to PDF/PPT DB")
-            answer = llm.ask_question_ppt_pdf(req.session_id, req.question)
-
-        elif video_files and doc_files:
-            # SCENARIO C: Hybrid (Prioritize most recent upload)
-            last_file = files[-1]
-            if last_file['ext'] in video_extensions:
-                 answer = llm.ask_question(last_file["name"], req.question)
-            else:
-                 answer = llm.ask_question_ppt_pdf(req.session_id, req.question)
-        else:
+        if not files:
             answer = "I don't see any files in this session yet. Please upload a PDF, PPT, or Video."
+        else:
+            answer = llm.ask_question_omni(req.session_id, video_files, doc_files, req.question)
 
     except Exception as e:
         print(f"Error during QA: {e}")
-        answer = "I encountered an error while processing your request."
+        if "temporarily unavailable" in str(e) or "503" in str(e) or "429" in str(e):
+            answer = "The AI service is temporarily busy. Please try your question again in a moment."
+        else:
+            answer = "I encountered an error while processing your request."
 
     # 4. Save Chat History (FIXED: Using $each to prevent nested arrays)
     sessions_col.update_one(

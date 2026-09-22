@@ -1,5 +1,6 @@
 import os, json, re, uuid
 import chromadb
+from chromadb.config import Settings
 import torch
 from PIL import Image
 from sentence_transformers import SentenceTransformer
@@ -33,13 +34,19 @@ class ChromaMultimodalDB:
         self.collection_name = f"chat_{chat_id}"
 
         # 🔥 CHANGED: Use PersistentClient to save to local disk
-        self.client = chromadb.PersistentClient(path="./chroma_db_storage")
+        self.client = chromadb.PersistentClient(
+            path="./chroma_db_storage",
+            settings=Settings(anonymized_telemetry=False),
+        )
         
         self.collection = self.client.get_or_create_collection(self.collection_name)
 
         self.text_model = SentenceTransformer("sentence-transformers/all-mpnet-base-v2")
         self.clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
-        self.clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+        self.clip_processor = CLIPProcessor.from_pretrained(
+            "openai/clip-vit-base-patch32",
+            use_fast=True,
+        )
 
         if self.doc_uuid:
             self.json_path = f"langbase_json/{self.doc_uuid}.json"
@@ -126,9 +133,13 @@ class ChromaMultimodalDB:
     # -----------------------------------------
     def query_text(self, query, top_k=10):
         q_emb = self.text_model.encode(query).tolist()
+        result_count = self.collection.count()
+        if result_count == 0:
+            return {}
+
         res = self.collection.query(
             query_embeddings=[q_emb],
-            n_results=top_k,
+            n_results=min(top_k, result_count),
             where={"chat_id": {"$eq": self.chat_id}}
         )
         return res["documents"][0] if res["documents"] else []

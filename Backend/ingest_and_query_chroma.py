@@ -4,6 +4,7 @@ import numpy as np
 import torch
 from tqdm import tqdm
 from chromadb import PersistentClient
+from chromadb.config import Settings
 from sentence_transformers import SentenceTransformer
 
 
@@ -33,7 +34,10 @@ class VectorDB:
     # ---------------------------------------------------------
     def get_client(self):
         os.makedirs(self.CHROMA_DIR, exist_ok=True)
-        return PersistentClient(path=self.CHROMA_DIR)
+        return PersistentClient(
+            path=self.CHROMA_DIR,
+            settings=Settings(anonymized_telemetry=False),
+        )
 
     # ---------------------------------------------------------
     # INGEST JSON -> ChromaDB

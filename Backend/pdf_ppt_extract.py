@@ -1,4 +1,4 @@
-import fitz  # PyMuPDF
+import pymupdf
 import json
 import io
 from PIL import Image
@@ -7,7 +7,7 @@ from PIL import Image
 class Pdf2Json:
     def __init__(self,name):
         self.name = name
-        self.pdf = fitz.open(f"downloads/{name}.pdf")
+        self.pdf = pymupdf.open(f"downloads/{name}.pdf")
 
         self.pdf_json = {}
         self.image_store = {}
@@ -45,10 +45,10 @@ class Pdf2Json:
 
             for image_index, img in enumerate(image_list, start=1): # enumerate the image list
                 xref = img[0] # get the XREF of the image
-                pix = fitz.Pixmap(self.pdf, xref) # create a Pixmap
+                pix = pymupdf.Pixmap(self.pdf, xref) # create a Pixmap
 
                 if pix.n - pix.alpha > 3: # CMYK: convert to RGB first
-                     pix = fitz.Pixmap(fitz.csRGB, pix)
+                     pix = pymupdf.Pixmap(pymupdf.csRGB, pix)
 
                 pix.save(f"langbase_json/ExtractedImages/{self.name}{self.image_index}.png") # save the image as png
                 pix = None
