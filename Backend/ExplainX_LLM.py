@@ -1,5 +1,5 @@
 import os
-import google.generativeai as genai
+from google import genai
 from retrieve import retrieve_combined
 from pdf_chroma_ingest import ChromaMultimodalDB
 from dotenv import load_dotenv
@@ -57,8 +57,17 @@ Rules:
 
 class LLM:
     def __init__(self):
-        genai.configure(api_key=API)
-        self.MODEL_NAME = "models/gemini-2.5-flash"
+        self.client = genai.Client(api_key=API)
+        self.MODEL_NAME = "gemini-2.5-flash"
+
+    def _generate(self, prompt):
+        response = self.client.models.generate_content(
+            model=self.MODEL_NAME,
+            contents=prompt,
+        )
+        if not response.text:
+            raise RuntimeError("Gemini returned no text response")
+        return response.text.strip()
 
     # ---------------- Helpers ---------------- #
 
@@ -71,7 +80,7 @@ CONTEXT:
 
 QUESTION: {question}
 """
-        return genai.GenerativeModel(self.MODEL_NAME).generate_content(prompt).text.strip()
+        return self._generate(prompt)
 
     def _final_answer(self, context, question):
         prompt = f"""
@@ -82,24 +91,20 @@ CONTEXT:
 
 QUESTION: {question}
 """
-        return genai.GenerativeModel(self.MODEL_NAME).generate_content(prompt).text.strip()
+        return self._generate(prompt)
 
     # ---------------- VIDEO ---------------- #
 
     def summarize_video(self, video_id):
         _, transcripts, frames = retrieve_combined(video_id, "summarize the video fully", 500, 500)
         context = "\n".join([t["document"] for t in transcripts] + [f["document"] for f in frames])
-        raw = genai.GenerativeModel(self.MODEL_NAME).generate_content(
-            build_prompt(context, "Summarize the full video", mode="narrative")
-        ).text
+        raw = self._generate(build_prompt(context, "Summarize the full video", mode="narrative"))
         return clean_llm_text(raw)
 
     def ask_question(self, video_id, question):
         _, transcripts, frames = retrieve_combined(video_id, question, 30, 30)
         context = "\n".join([t["document"] for t in transcripts] + [f["document"] for f in frames])
-        raw = genai.GenerativeModel(self.MODEL_NAME).generate_content(
-            build_prompt(context, question, mode="regulatory")
-        ).text
+        raw = self._generate(build_prompt(context, question, mode="regulatory"))
         return clean_llm_text(raw)
 
     # ---------------- PDF ---------------- #
@@ -107,9 +112,7 @@ QUESTION: {question}
     def summarize_pdf(self, chat_id):
         db = ChromaMultimodalDB(chat_id)
         chunks = db.query_text("Summarize all pages", top_k=20)
-        raw = genai.GenerativeModel(self.MODEL_NAME).generate_content(
-            build_prompt("\n".join(chunks), "Summarize the PDF", mode="regulatory")
-        ).text
+        raw = self._generate(build_prompt("\n".join(chunks), "Summarize the PDF", mode="regulatory"))
         return clean_llm_text(raw)
 
     # ---------------- MULTI-DOC SMART QA ---------------- #
@@ -206,7 +209,7 @@ Your goal is to answer the user's question by COLLABORATING information from bot
         # 4. Generate Answer using Gemini (FIXED: Added actual generation call)
         try:
             full_prompt = f"{system_prompt}\n\nUSER QUESTION: {question}"
-            raw_response = genai.GenerativeModel(self.MODEL_NAME).generate_content(full_prompt).text
+            raw_response = self._generate(full_prompt)
             return clean_llm_text(raw_response)
         except Exception as e:
             print(f"LLM Generation Error: {e}")

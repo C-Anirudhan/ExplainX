@@ -1,88 +1,66 @@
-# dependencies (bun install)
-node_modules
+# Python virtual environments
+.venv/
+venv/
+env/
 
-# output
-out
-dist
-*.tgz
-
-# code coverage
-coverage
-*.lcov
-
-Backend/chroma_db/
-Backend/chroma_db_storage/
+# Python bytecode and tooling caches
+__pycache__/
 **/__pycache__/
-*.mp3
-*.wav
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
-# logs
-logs
-_.log
-report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
-
-# dotenv environment variable files
+# Environment files and local databases
 .env
-.env.development.local
-.env.test.local
-.env.production.local
-.env.local
-
-# caches
-.eslintcache
-.cache
-*.tsbuildinfo
-
-# IntelliJ based IDEs
-.idea
-
-# Finder (MacOS) folder config
-.DS_Store
-
-e2b.local.toml
-e2b.*.local.toml
-
-**/.react-router
-apps/mobile/caches/*
-
-#venv
-venv
-
-#models
-yolov8m.pt
-yolov8n.pt
-
-
-#__pycache__
-__pycache__
-Backend/__pycache__/*
-Backend/__pycache__/*
-
-#downloads
-downloads/*
-Backend/downloads/*
-#frames
-frames/*
-
-#langbase_json
-langbase_json/*
-Backend/langbase_json/*
-
-#temp
-temp/*
-
-#auth.db
+.env.*
+!.env.example
 auth.db
 
+# Backend-generated media, processing output, and local vector stores
+downloads/
+Backend/downloads/
+frames/
+Backend/frames/
+temp/
+Backend/temp/
+langbase_json/
+Backend/langbase_json/
+chroma_db/
+Backend/chroma_db/
+chroma_db_storage/
+Backend/chroma_db_storage/
+*.mp3
+*.wav
 
-#chroma_db
-Backend/chroma_db/*
-
-#models
+# Downloaded ML model weights
 yolov8m.pt
 yolov8n.pt
 
-Backend/chroma_db_storage/*
-*.mp3
-*.wav
-*.pyc
+# JavaScript dependencies and build output
+node_modules/
+out/
+dist/
+coverage/
+*.tgz
+*.lcov
+*.tsbuildinfo
+
+# Tool caches
+.cache/
+.eslintcache
+**/.react-router/
+apps/mobile/caches/
+
+# Logs
+logs/
+*.log
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Editor and operating-system files
+.idea/
+.DS_Store
+
+# Local Create/E2B configuration
+e2b.local.toml
+e2b.*.local.toml
