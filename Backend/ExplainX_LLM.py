@@ -5,7 +5,7 @@ from google.genai import types
 from retrieve import retrieve_combined
 from pdf_chroma_ingest import ChromaMultimodalDB
 from dotenv import load_dotenv
-from mongo import sessions_col
+from mongo import sessions_col, content_details_col
 from format_answer import clean_llm_text
 from ingest_and_query_chroma import VectorDB
 
@@ -60,8 +60,8 @@ Rules:
 class LLM:
     def __init__(self):
         self.client = genai.Client(api_key=API)
-        self.MODEL_NAME = "gemini-2.5-flash"
-        self.FALLBACK_MODEL_NAME = "gemini-2.5-flash-lite"
+        self.MODEL_NAME = "gemini-3.5-flash"
+        self.FALLBACK_MODEL_NAME = "gemini-3.5-flash-lite"
 
     def _generate(self, prompt):
         last_error = None
@@ -139,99 +139,75 @@ QUESTION: {question}
 
     # ---------------- MULTI-DOC SMART QA ---------------- #
 
-    def ask_question_ppt_pdf(self, chat_id, question):
-        session = sessions_col.find_one({"_id": chat_id})
-        active_doc = session.get("active_doc")
+    def _resolve_filename(self, fname):
+        doc = content_details_col.find_one({"$or": [{"uuid": fname}, {"base_uuid": fname}]})
+        if doc and "real_name" in doc:
+            return doc["real_name"]
+        return fname
 
-        db = ChromaMultimodalDB(chat_id)
-        grouped = db.query_grouped(question, only_doc=None)
-
-        # Nothing found
-        if not grouped:
-            return "No relevant information found in the uploaded documents."
-
-        # One document — auto-lock
-        if len(grouped) == 1:
-            fname, chunks = list(grouped.items())[0]
-            sessions_col.update_one({"_id": chat_id}, {"$set": {"active_doc": fname}})
-            return clean_llm_text(self._final_answer("\n".join(chunks), question))
-
-        # Multiple docs — ask user
-        msg = "Your question matches multiple documents:\n\n"
-        for fname, chunks in grouped.items():
-            short = self._quick_answer("\n".join(chunks[:6]), question)
-            msg += f"• {fname}: {short}\n"
-        msg += "\nPlease reply with the document name you meant."
-        return clean_llm_text(msg)
-
-    def ask_question_multimodal(self, session_id, video_filename, question):
-        """
-        Retrieves context from BOTH Video and PDF databases and fuses them.
-        """
-        print(f"--- Multimodal Query: {question} ---")
-
-        # 1. Get Video Context
-        # We try to use the VectorDB. If it fails or returns nothing, we warn the user.
-        video_context = ""
-        try:
-            vid_db = VectorDB(video_filename)
-            # Ensure your VectorDB class has a 'query' or 'similarity_search' method!
-            # If your VectorDB uses 'similarity_search', change '.query' to '.similarity_search' below.
-            vid_results = vid_db.query(session_id,question) 
+    def ask_question_omni(self, session_id, video_files, doc_files, question):
+        print(f"--- Omni Query: {question} ---")
+        
+        all_context = []
+        
+        # 1. Gather Video Context
+        for vf in video_files:
+            video_id = vf["name"]
+            try:
+                # retrieve_combined returns (combined_text, transcripts, frames)
+                from retrieve import retrieve_combined
+                _, transcripts, frames = retrieve_combined(video_id, question, 15, 15)
+                
+                if transcripts:
+                    real_video_name = self._resolve_filename(video_id)
+                    all_context.append(f"--- SOURCE: VIDEO TRANSCRIPT ({real_video_name}) ---")
+                    for t in transcripts:
+                        all_context.append(t["document"])
+                if frames:
+                    all_context.append(f"--- SOURCE: VIDEO VISUALS ({real_video_name}) ---")
+                    for f in frames:
+                        all_context.append(f["document"])
+            except Exception as e:
+                print(f"Error fetching video context for {video_id}: {e}")
+        
+        # 2. Gather Document Context
+        if doc_files:
+            try:
+                db = ChromaMultimodalDB(session_id)
+                grouped = db.query_grouped(question, top_k=25, only_doc=None)
+                
+                for fname, chunks in grouped.items():
+                    real_doc_name = self._resolve_filename(fname)
+                    all_context.append(f"--- SOURCE: DOCUMENT ({real_doc_name}) ---")
+                    all_context.extend(chunks)
+            except Exception as e:
+                print(f"Error fetching document context: {e}")
+                
+        if not all_context:
+            return "No relevant information found in any uploaded documents or videos."
             
-            if isinstance(vid_results, list):
-                # Handle list of objects (e.g., LangChain Documents)
-                video_context = "\n".join([doc.page_content if hasattr(doc, 'page_content') else str(doc) for doc in vid_results])
-            else:
-                video_context = str(vid_results)
-        except Exception as e:
-            print(f"Error fetching video context: {e}")
-            video_context = "No video context available due to error."
-
-        # 2. Get PDF/PPT Context
-        pdf_context = ""
-        try:
-            # We use filename="" because we query by session_id in ChromaMultimodalDB
-            pdf_db = ChromaMultimodalDB(session_id) 
-            
-            # FIXED: Used 'query_text' to match your summarize_pdf method
-            pdf_results = pdf_db.query_text(question, top_k=5)
-            
-            if isinstance(pdf_results, list):
-                pdf_context = "\n".join(pdf_results)
-            else:
-                pdf_context = str(pdf_results)
-        except Exception as e:
-            print(f"Error fetching PDF context: {e}")
-            pdf_context = "No document context available due to error."
-
-        # 3. Construct the "Collaboration" System Prompt
+        full_context = "\n".join(all_context)
+        
         system_prompt = f"""
 You are a highly intelligent researcher assistant capable of synthesizing information from multiple sources.
 
-You have two distinct sources of information:
-1. A VIDEO TRANSCRIPT (visual/auditory content).
-2. A DOCUMENT (PDF/PPT slides or text).
+You have access to context from multiple videos and documents. Each piece of context is prefixed with its SOURCE.
 
-Your goal is to answer the user's question by COLLABORATING information from both sources.
+Your goal is to answer the user's question by COLLABORATING information from all available sources.
 
---- VIDEO CONTEXT ---
-{video_context}
-
---- DOCUMENT CONTEXT ---
-{pdf_context}
+--- COMBINED CONTEXT ---
+{full_context}
 
 --- INSTRUCTIONS ---
-- If the answer is found in both, mention how they support each other.
-- If the answer is only in one, specify which source it came from.
-- If the Video explains 'X' and the Document explains 'Y', synthesize them to explain 'X and Y'.
-- Do not hallucinate. If the answer isn't in either context, say so.
-        """
-
-        # 4. Generate Answer using Gemini (FIXED: Added actual generation call)
+- ALWAYS cite your sources based on the SOURCE provided (e.g., "According to document.pdf..." or "As seen in video.mp4...").
+- If the answer spans multiple sources, synthesize the information and cite all relevant sources.
+- If the answer is only found in one source, specify which source it came from.
+- Do not hallucinate. If the answer isn't in the context, say so.
+"""
+        
         try:
-            full_prompt = f"{system_prompt}\n\nUSER QUESTION: {question}"
-            raw_response = self._generate(full_prompt)
+            full_prompt_text = f"{system_prompt}\n\nUSER QUESTION: {question}"
+            raw_response = self._generate(full_prompt_text)
             return clean_llm_text(raw_response)
         except Exception as e:
             print(f"LLM Generation Error: {e}")

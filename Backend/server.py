@@ -5,6 +5,7 @@ import uuid
 import os
 os.environ["ANONYMIZED_TELEMETRY"] = "False"
 os.environ["CHROMA_TELEMETRY"] = "False"
+os.environ["CHROMA_TELEMETRY_IMPL"] = "None"
 
 import logging
 logging.getLogger("chromadb").setLevel(logging.ERROR)
@@ -237,9 +238,25 @@ def upload_link(req: LinkUpload):
 def upload_file(session_id: str = Form(...), file: UploadFile = File(...)):
     ext = file.filename.split(".")[-1].lower()
 
-    saved_path = os.path.join(UPLOAD_DIR, f"{uuid.uuid4()}.{ext}")
+    generated_uuid = str(uuid.uuid4())
+    saved_path = os.path.join(UPLOAD_DIR, f"{generated_uuid}.{ext}")
     with open(saved_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
+        
+    try:
+        from mongo import content_details_col
+        from datetime import datetime
+        content_details_col.insert_one({
+            "uuid": f"{generated_uuid}.{ext}",
+            "base_uuid": generated_uuid,
+            "real_name": file.filename,
+            "session_id": session_id,
+            "user_email": "unknown", # not tracked easily in server.py
+            "content_type": ext,
+            "uploaded_at": datetime.utcnow()
+        })
+    except Exception as e:
+        print("Failed to save to content_details:", e)
 
     if ext in ["mp4", "mkv", "mov"]:
         summary = process_video_pipeline(session_id, saved_path)
