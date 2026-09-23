@@ -91,15 +91,29 @@ export default function InputBar() {
   const handleLinkUpload = async () => {
     if (!linkInput.trim()) return;
 
+    const currentLink = linkInput.trim();
     setUploading(true);
     setShowLinkModal(false);
 
     try {
       const sessionId = getActiveSessionId(); // GET LATEST ID
 
-      addMessage({ role: "user", content: `Uploaded link: ${linkInput}` });
+      addMessage({ role: "user", content: `Uploaded link: ${currentLink}` });
 
-      const response = await apiService.uploadLink(sessionId, linkInput);
+      const response = await apiService.uploadLink(sessionId, currentLink);
+
+      if (response) {
+        const videoObj = {
+          name: response.filename || currentLink,
+          ext: response.ext || ".mp4",
+          type: "video",
+          uuid: response.uuid,
+          source_url: currentLink
+        };
+        addFile(videoObj);
+        useChatStore.getState().setActiveFile(videoObj);
+        useChatStore.getState().setViewerTab("video");
+      }
 
       if (response?.summary) {
         addMessage({
@@ -109,11 +123,13 @@ export default function InputBar() {
         });
       }
 
-      persistSessions();
+      if (sessionId) {
+        await useChatStore.getState().refreshSessionFiles(sessionId);
+      }
     } catch (error) {
       addMessage({
         role: "assistant",
-        content: "Sorry, there was an error uploading your link.",
+        content: `Sorry, there was an error uploading your link: ${error.message || "Failed"}`,
       });
     } finally {
       setUploading(false);

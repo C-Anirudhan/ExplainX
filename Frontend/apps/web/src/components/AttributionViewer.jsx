@@ -57,9 +57,15 @@ export default function AttributionViewer() {
   const docFiles = useMemo(() => (uploadedFiles || []).filter(f => !isVideo(f)), [uploadedFiles]);
   const videoFiles = useMemo(() => (uploadedFiles || []).filter(f => isVideo(f)), [uploadedFiles]);
 
-  // Default activeFile when tab changes or files load if none selected
+  // Auto-switch tab if only video or only documents exist, and keep activeFile synchronized
   useEffect(() => {
-    if (!activeFile) {
+    if (docFiles.length === 0 && videoFiles.length > 0 && viewerTab !== "video") {
+      setViewerTab("video");
+      setActiveFile(videoFiles[0]);
+    } else if (videoFiles.length === 0 && docFiles.length > 0 && viewerTab !== "document") {
+      setViewerTab("document");
+      setActiveFile(docFiles[0]);
+    } else if (!activeFile) {
       if (viewerTab === "video" && videoFiles.length > 0) {
         setActiveFile(videoFiles[0]);
       } else if (viewerTab === "document" && docFiles.length > 0) {
@@ -68,7 +74,7 @@ export default function AttributionViewer() {
         setActiveFile(uploadedFiles[0]);
       }
     }
-  }, [viewerTab, videoFiles, docFiles, activeFile, uploadedFiles, setActiveFile]);
+  }, [viewerTab, videoFiles, docFiles, activeFile, uploadedFiles, setActiveFile, setViewerTab]);
 
   // Load document metadata when activeFile changes
   useEffect(() => {
@@ -313,10 +319,29 @@ export default function AttributionViewer() {
         {/* DOCUMENT MODE */}
         {viewerTab === "document" && (
           <div className="w-full h-full flex flex-col items-center justify-center">
-            {!activeFile ? (
-              <div className="flex flex-col items-center justify-center h-full text-center p-6 space-y-1.5">
-                <FileText size={24} className="text-gray-300 stroke-1 mx-auto" />
-                <p className="text-gray-400 text-xs font-mono">No document selected</p>
+            {!activeFile || isVideo(activeFile) ? (
+              <div className="flex flex-col items-center justify-center h-full text-center p-6 space-y-2">
+                {videoFiles.length > 0 ? (
+                  <>
+                    <Film size={26} className="text-gray-400 stroke-1 mx-auto" />
+                    <p className="text-black text-xs font-medium">Video uploaded in this session</p>
+                    <p className="text-gray-400 text-[11px] font-mono">No PDF/PPT document selected</p>
+                    <button
+                      onClick={() => {
+                        setViewerTab("video");
+                        setActiveFile(videoFiles[0]);
+                      }}
+                      className="mt-2 px-3 py-1 bg-black text-white text-xs rounded hover:bg-gray-800 transition shadow-xs"
+                    >
+                      Switch to Video Player
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <FileText size={24} className="text-gray-300 stroke-1 mx-auto" />
+                    <p className="text-gray-400 text-xs font-mono">No document selected</p>
+                  </>
+                )}
               </div>
             ) : docMode === "preview" ? (
               /* REAL PDF PREVIEW (Full Fidelity Native PDF Rendering) */

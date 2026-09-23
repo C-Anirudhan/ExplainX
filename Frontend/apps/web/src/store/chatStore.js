@@ -117,17 +117,27 @@ const useChatStore = create((set, get) => ({
 
   addFile: (file) =>
     set((state) => {
-      const isVideo = file.name.match(/\.(mp4|mov|avi|mkv|webm)$/i);
+      const isVideo = file.type === "video" ||
+        (file.ext && [".mp4", ".mov", ".webm", ".avi", ".mkv"].includes(file.ext.toLowerCase())) ||
+        (file.name && file.name.match(/\.(mp4|mov|avi|mkv|webm)$/i)) ||
+        (file.name && (file.name.includes("youtube.com") || file.name.includes("youtu.be"))) ||
+        (file.source_url && (file.source_url.includes("youtube.com") || file.source_url.includes("youtu.be")));
       const fileObj = {
         name: file.name,
-        ext: isVideo ? ".mp4" : ".pdf",
+        ext: isVideo ? (file.ext || ".mp4") : (file.ext || ".pdf"),
         type: isVideo ? "video" : "document",
-        size: file.size
+        size: file.size || 0,
+        uuid: file.uuid,
+        source_url: file.source_url || (file.name?.includes("http") ? file.name : null)
       };
+      const exists = state.uploadedFiles.some(f => (f.uuid && fileObj.uuid && f.uuid === fileObj.uuid) || f.name === fileObj.name);
+      const newFiles = exists
+        ? state.uploadedFiles.map(f => (f.name === fileObj.name || (f.uuid && fileObj.uuid && f.uuid === fileObj.uuid)) ? { ...f, ...fileObj } : f)
+        : [...state.uploadedFiles, fileObj];
       return {
-        uploadedFiles: [...state.uploadedFiles, fileObj],
-        activeFile: state.activeFile || fileObj,
-        viewerTab: isVideo ? "video" : "document"
+        uploadedFiles: newFiles,
+        activeFile: fileObj,
+        viewerTab: isVideo ? "video" : state.viewerTab
       };
     }),
 
@@ -182,13 +192,26 @@ const useChatStore = create((set, get) => ({
   loadSession: async (sessionId) => {
     set({ isTyping: true });
     try {
-        const history = await apiService.getHistory(sessionId);
-        const { sessions } = get();
-        const currentSess = sessions.find(s => s.id === sessionId);
-        const sessFiles = (currentSess?.files || []).map(f => ({
-          ...f,
-          type: f.ext?.match(/\.(mp4|mov|avi|mkv|webm)$/i) ? "video" : "document"
-        }));
+        const [history, sessions] = await Promise.all([
+          apiService.getHistory(sessionId),
+          apiService.getSessions().catch(() => [])
+        ]);
+        
+        if (sessions && sessions.length > 0) {
+          set({ sessions });
+        }
+        
+        const currentSess = (sessions || get().sessions || []).find(s => s.id === sessionId);
+        const sessFiles = (currentSess?.files || []).map(f => {
+          const isVid = f.type === "video" || 
+                        (f.ext && [".mp4", ".mov", ".webm", ".avi", ".mkv"].includes(f.ext.toLowerCase())) ||
+                        (f.name && (f.name.includes("youtube.com") || f.name.includes("youtu.be")));
+          return {
+            ...f,
+            type: isVid ? "video" : "document",
+            source_url: f.source_url || (f.name?.includes("http") ? f.name : null)
+          };
+        });
 
         const cleanMessages = (history.messages || []).map(msg => ({
             role: msg.role,
@@ -200,13 +223,15 @@ const useChatStore = create((set, get) => ({
         }));
 
         const initialFile = sessFiles.length > 0 ? sessFiles[0] : null;
+        const hasOnlyVideo = sessFiles.length > 0 && sessFiles.every(f => f.type === "video");
+        const hasOnlyDocs = sessFiles.length > 0 && sessFiles.every(f => f.type === "document");
 
         set({
             currentSessionId: sessionId,
             messages: cleanMessages,
             uploadedFiles: sessFiles,
             activeFile: initialFile,
-            viewerTab: initialFile?.type === "video" ? "video" : "document",
+            viewerTab: hasOnlyVideo ? "video" : (hasOnlyDocs ? "document" : (initialFile?.type === "video" ? "video" : "document")),
             activeHighlight: null,
             activeVideoSeek: null,
         });
@@ -216,6 +241,34 @@ const useChatStore = create((set, get) => ({
         console.error("Failed to load session:", error);
     } finally {
         set({ isTyping: false });
+    }
+  },
+
+  refreshSessionFiles: async (sessionId) => {
+    try {
+      const sessions = await apiService.getSessions();
+      set({ sessions });
+      const currentSess = (sessions || []).find(s => s.id === sessionId);
+      if (currentSess && currentSess.files) {
+        const sessFiles = currentSess.files.map(f => {
+          const isVid = f.type === "video" || 
+                        (f.ext && [".mp4", ".mov", ".webm", ".avi", ".mkv"].includes(f.ext.toLowerCase())) ||
+                        (f.name && (f.name.includes("youtube.com") || f.name.includes("youtu.be")));
+          return {
+            ...f,
+            type: isVid ? "video" : "document",
+            source_url: f.source_url || (f.name?.includes("http") ? f.name : null)
+          };
+        });
+        const hasOnlyVideo = sessFiles.length > 0 && sessFiles.every(f => f.type === "video");
+        set((state) => ({
+          uploadedFiles: sessFiles,
+          activeFile: state.activeFile || sessFiles[0],
+          viewerTab: hasOnlyVideo ? "video" : (state.activeFile ? state.viewerTab : (hasOnlyVideo ? "video" : "document"))
+        }));
+      }
+    } catch (e) {
+      console.error("Failed to refresh session files:", e);
     }
   },
 

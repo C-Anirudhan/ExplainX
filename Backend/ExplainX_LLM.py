@@ -331,9 +331,12 @@ class LLM:
             real_video_name = self._resolve_filename(video_id)
             try:
                 from retrieve import retrieve_combined
-                _, transcripts, frames = retrieve_combined(video_id, question, 15, 15)
+                top_k = 25 if any(w in question.lower() for w in ["point", "fact", "all", "summary", "explain", "video", "first", "second", "third", "10th", "tenth", "10"]) else 15
+                _, transcripts, frames = retrieve_combined(video_id, question, top_k, 15)
 
                 if transcripts:
+                    # Sort transcripts chronologically so sequential/ordinal reasoning is consistent with video timeline
+                    transcripts = sorted(transcripts, key=lambda t: float(t.get("metadata", {}).get("start", 0.0)))
                     video_context.append(f"=== SOURCE: VIDEO TRANSCRIPTS ({real_video_name}) ===")
                     for t in transcripts:
                         meta = t.get("metadata", {})
@@ -446,6 +449,11 @@ You are ExplainX, a state-of-the-art Multimodal Truth Engine answering questions
    - When BOTH document context and video context are provided, synthesize insights across BOTH sources whenever relevant to the question.
    - If the topic is mentioned in the document and also discussed in the video, explain both aspects and provide citations for BOTH ([[Doc: ...]] tags and [[Video: ...]] tags).
    - Never restrict your answer to only the video or only the document if both sources provide relevant evidence.
+
+6. SEQUENTIAL, ORDINAL, OR FACT-LIST QUERIES:
+   - When asked for an ordinal item (e.g. "10th point", "point 5", "first point", "facts mentioned") from a video or document:
+     - If the media presents facts or statements sequentially without explicit numbers (e.g., the narration does not explicitly utter the words "Point 10"), do NOT refuse if chronological facts or statements are present in the context.
+     - State that the facts are narrated chronologically in the video, explain the corresponding fact or topic at that point in the timeline, and cite the exact timestamp.
 """
 
         try:
