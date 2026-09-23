@@ -8,22 +8,38 @@ CHROMA_DIR = "./chroma_db"
 COLLECTION_NAME = "videos"
 EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
-# ---------------------------------------------------
-# Load embedder
-# ---------------------------------------------------
-def get_embedder():
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"[INFO] Embeddings on {device}")
-    return SentenceTransformer(EMBED_MODEL, device=device,trust_remote_code=True)
+_embedder = None
+_client = None
+_col = None
 
 # ---------------------------------------------------
-# Connect to Chroma
+# Load embedder (Singleton)
+# ---------------------------------------------------
+def get_embedder():
+    global _embedder
+    if _embedder is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        _embedder = SentenceTransformer(EMBED_MODEL, device=device)
+    return _embedder
+
+# ---------------------------------------------------
+# Connect to Chroma (Singleton)
 # ---------------------------------------------------
 def get_client():
-    return PersistentClient(
-        path=CHROMA_DIR,
-        settings=Settings(anonymized_telemetry=False),
-    )
+    global _client
+    if _client is None:
+        _client = PersistentClient(
+            path=CHROMA_DIR,
+            settings=Settings(anonymized_telemetry=False),
+        )
+    return _client
+
+def get_collection():
+    global _col
+    if _col is None:
+        c = get_client()
+        _col = c.get_collection(COLLECTION_NAME)
+    return _col
 
 # ---------------------------------------------------
 # Convert result list into clean text for LLM
@@ -38,15 +54,11 @@ def format_results(results, header):
 # SAFE, CONTRACT-LOCKED RETRIEVER
 # ---------------------------------------------------
 def retrieve_combined(video_id: str, question: str, top_k_transcript=10, top_k_frames=10):
-    question = str(question)
-    # 🔐 Hard type safety
     video_id = str(video_id)
     question = str(question)
 
-    client = get_client()
-    col = client.get_collection(COLLECTION_NAME)
-    embedder = SentenceTransformer(EMBED_MODEL)
-
+    col = get_collection()
+    embedder = get_embedder()
 
     q_emb = embedder.encode([question], convert_to_numpy=True).tolist()
 
