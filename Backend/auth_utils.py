@@ -1,7 +1,12 @@
 import os
 import bcrypt
 from datetime import datetime, timedelta
-from jose import jwt, JWTError
+
+try:
+    from jose import jwt, JWTError
+except ImportError:
+    import jwt
+    from jwt import PyJWTError as JWTError
 
 # ===========================
 # ENV CONFIG (safe defaults)
@@ -25,7 +30,10 @@ def hash_password(password: str) -> str:
 
 def verify_password(password: str, hashed: str) -> bool:
     """Verify a stored password."""
-    return bcrypt.checkpw(password.encode("utf-8"), hashed.encode("utf-8"))
+    try:
+        return bcrypt.checkpw(password.encode("utf-8"), hashed.encode("utf-8"))
+    except Exception:
+        return False
 
 
 # ===========================
@@ -40,7 +48,10 @@ def create_access_token(data: dict):
         "exp": expire,
         "iat": datetime.utcnow()
     })
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    if isinstance(token, bytes):
+        token = token.decode("utf-8")
+    return token
 
 
 # ===========================
@@ -52,5 +63,5 @@ def decode_token(token: str) -> dict:
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return payload
-    except JWTError as e:
-        raise e
+    except Exception as e:
+        raise JWTError(str(e))

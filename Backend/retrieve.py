@@ -1,3 +1,4 @@
+import os
 import torch
 from chromadb import PersistentClient
 from chromadb.config import Settings
@@ -49,49 +50,58 @@ def retrieve_combined(video_id: str, question: str, top_k_transcript=10, top_k_f
 
     q_emb = embedder.encode([question], convert_to_numpy=True).tolist()
 
-    # ----------------------------- TRANSCRIPTS
-    transcript_results = col.query(
-        query_embeddings=q_emb,
-        n_results=top_k_transcript,
-        where={
-            "$and": [
-                {"video_id": {"$eq": video_id}},
-                {"type": {"$eq": "transcript"}}
+    video_variants = list(dict.fromkeys([video_id, os.path.splitext(video_id)[0], f"{os.path.splitext(video_id)[0]}.mp4"]))
+    video_filter = {"video_id": {"$in": video_variants}} if len(video_variants) > 1 else {"video_id": {"$eq": video_id}}
+
+    transcript_hits = []
+    if top_k_transcript > 0:
+        try:
+            transcript_results = col.query(
+                query_embeddings=q_emb,
+                n_results=top_k_transcript,
+                where={
+                    "$and": [
+                        video_filter,
+                        {"type": {"$eq": "transcript"}}
+                    ]
+                },
+                include=["documents", "metadatas", "distances"]
+            )
+            tr_docs = transcript_results.get("documents", [[]])[0]
+            tr_meta = transcript_results.get("metadatas", [[]])[0]
+            tr_dist = transcript_results.get("distances", [[]])[0]
+
+            transcript_hits = [
+                {"document": tr_docs[i], "metadata": tr_meta[i], "distance": tr_dist[i]}
+                for i in range(len(tr_docs))
             ]
-        },
-        include=["documents", "metadatas", "distances"]
-    )
+        except Exception as e:
+            print(f"[WARN] Failed to query transcripts: {e}")
 
-    tr_docs = transcript_results["documents"][0]
-    tr_meta = transcript_results["metadatas"][0]
-    tr_dist = transcript_results["distances"][0]
+    frame_hits = []
+    if top_k_frames > 0:
+        try:
+            frame_results = col.query(
+                query_embeddings=q_emb,
+                n_results=top_k_frames,
+                where={
+                    "$and": [
+                        video_filter,
+                        {"type": {"$eq": "frame"}}
+                    ]
+                },
+                include=["documents", "metadatas", "distances"]
+            )
+            fr_docs = frame_results.get("documents", [[]])[0]
+            fr_meta = frame_results.get("metadatas", [[]])[0]
+            fr_dist = frame_results.get("distances", [[]])[0]
 
-    transcript_hits = [
-        {"document": tr_docs[i], "metadata": tr_meta[i], "distance": tr_dist[i]}
-        for i in range(len(tr_docs))
-    ]
-
-    # ----------------------------- FRAMES
-    frame_results = col.query(
-        query_embeddings=q_emb,
-        n_results=top_k_frames,
-        where={
-            "$and": [
-                {"video_id": {"$eq": video_id}},
-                {"type": {"$eq": "frame"}}
+            frame_hits = [
+                {"document": fr_docs[i], "metadata": fr_meta[i], "distance": fr_dist[i]}
+                for i in range(len(fr_docs))
             ]
-        },
-        include=["documents", "metadatas", "distances"]
-    )
-
-    fr_docs = frame_results["documents"][0]
-    fr_meta = frame_results["metadatas"][0]
-    fr_dist = frame_results["distances"][0]
-
-    frame_hits = [
-        {"document": fr_docs[i], "metadata": fr_meta[i], "distance": fr_dist[i]}
-        for i in range(len(fr_docs))
-    ]
+        except Exception as e:
+            print(f"[WARN] Failed to query frames: {e}")
 
     # ----------------------------- FORMAT
     formatted_transcript = format_results(transcript_hits, "TRANSCRIPT SEGMENTS")
@@ -100,8 +110,8 @@ def retrieve_combined(video_id: str, question: str, top_k_transcript=10, top_k_f
     combined_text = (
         "You are analyzing a video.\n"
         "Below are two types of retrieved context:\n"
-        "1️⃣ Transcript segments (spoken content)\n"
-        "2️⃣ Frame descriptions (YOLO objects + OCR text)\n\n"
+        "1. Transcript segments (spoken content)\n"
+        "2. Frame descriptions (YOLO objects + OCR text)\n\n"
         "Use BOTH to answer the question.\n\n"
         f"{formatted_transcript}\n\n{formatted_frames}"
     )

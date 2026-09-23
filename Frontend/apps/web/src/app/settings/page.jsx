@@ -1,199 +1,269 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { ArrowLeft, Moon, Sun, User, Mail, Key, Save } from "lucide-react";
+import { ArrowLeft, User, Mail, Key, Save, CheckCircle2, Zap, Cpu } from "lucide-react";
 import useChatStore from "@/store/chatStore";
 import apiService from "@/services/api";
 
 export default function SettingsPage() {
-  const { theme, setTheme, user, setUser } = useChatStore();
+  const { user, setUser } = useChatStore();
 
   const [username, setUsername] = useState(user?.username || "");
   const [email, setEmail] = useState(user?.email || "");
   const [apiKey, setApiKey] = useState("");
-  const [saving, setSaving] = useState(false);
+  const [llmStatus, setLlmStatus] = useState({ llm_active: false, provider: null, model: "offline-fallback" });
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [savingKey, setSavingKey] = useState(false);
   const [success, setSuccess] = useState("");
+  const [error, setError] = useState("");
+
+  const refreshStatus = () => {
+    apiService.getSettingsStatus()
+      .then((status) => {
+        if (status) setLlmStatus(status);
+      })
+      .catch((err) => console.log("Failed to fetch settings status:", err));
+  };
 
   useEffect(() => {
     if (user) {
       setUsername(user.username || "");
       setEmail(user.email || "");
     }
+    refreshStatus();
   }, [user]);
-
-  const handleThemeToggle = () => {
-    const newTheme = theme === "dark" ? "light" : "dark";
-    setTheme(newTheme);
-    localStorage.setItem("theme", newTheme);
-  };
 
   const handleSaveProfile = async (e) => {
     e.preventDefault();
-    setSaving(true);
+    setSavingProfile(true);
     setSuccess("");
+    setError("");
 
     try {
       const response = await apiService.updateProfile({
         username,
         email,
-        apiKey: apiKey || undefined,
       });
 
-      setUser(response.user);
-      setSuccess("Profile updated successfully!");
-      setTimeout(() => setSuccess(""), 3000);
-    } catch (error) {
-      console.error("Error updating profile:", error);
+      if (response.user) {
+        setUser(response.user);
+      }
+      setSuccess("Profile updated successfully.");
+      setTimeout(() => setSuccess(""), 4000);
+    } catch (err) {
+      console.error("Error updating profile:", err);
+      setError("Failed to update profile.");
     } finally {
-      setSaving(false);
+      setSavingProfile(false);
     }
   };
 
+  const handleSaveApiKey = async (e) => {
+    e.preventDefault();
+    if (!apiKey.trim()) {
+      setError("Please enter a valid Groq (gsk_...) or Gemini API key.");
+      return;
+    }
+
+    setSavingKey(true);
+    setSuccess("");
+    setError("");
+
+    try {
+      const response = await apiService.updateProfile({
+        apiKey: apiKey.trim(),
+      });
+
+      setLlmStatus({
+        llm_active: response.llm_active,
+        provider: response.provider,
+        model: response.model,
+      });
+      const providerName = response.provider || (apiKey.trim().startsWith("gsk_") ? "Groq" : "Gemini");
+      const modelName = response.model || (apiKey.trim().startsWith("gsk_") ? "Llama 3.3 70B" : "Gemini 2.5 Flash");
+      setSuccess(`${providerName} activated successfully with ${modelName}!`);
+      setApiKey("");
+      refreshStatus();
+      setTimeout(() => setSuccess(""), 6000);
+    } catch (err) {
+      console.error("Error saving API key:", err);
+      setError("Failed to save API key. Please check backend connection.");
+    } finally {
+      setSavingKey(false);
+    }
+  };
+
+  const getEngineBadgeText = () => {
+    if (!llmStatus.llm_active) return "Offline Grounded Fallback";
+    if (llmStatus.provider === "Groq" || llmStatus.model?.includes("llama")) {
+      return `Groq (${llmStatus.model || "Llama 3.3 70B"})`;
+    }
+    return `Gemini (${llmStatus.model || "2.5 Flash"})`;
+  };
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-purple-900">
-      <div className="max-w-4xl mx-auto px-4 py-8">
+    <div className="min-h-screen bg-white text-black antialiased">
+      <div className="max-w-2xl mx-auto px-4 py-12">
         {/* Header */}
         <div className="mb-8">
-          <a href="/chat">
-            <button className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors mb-4">
-              <ArrowLeft size={20} />
-              Back to Chat
-            </button>
+          <a
+            href="/chat"
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-600 hover:text-black transition-colors mb-4"
+          >
+            <ArrowLeft size={14} />
+            Back to Chat
           </a>
-          <h1 className="text-3xl font-bold text-white">Settings</h1>
-          <p className="text-gray-400 mt-2">
-            Manage your account and preferences
+          <h1 className="text-2xl font-bold tracking-tight text-black">Settings</h1>
+          <p className="text-xs text-gray-500 mt-1">
+            Manage account and LLM engine configurations
           </p>
         </div>
 
+        {/* Engine Status Banner */}
+        <div className="mb-6 p-4 border border-gray-300 rounded-lg flex items-center justify-between bg-gray-50">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold uppercase tracking-wider text-black">Active AI Engine:</span>
+              <span className={`text-xs px-2.5 py-0.5 rounded font-mono font-semibold ${
+                llmStatus.llm_active
+                  ? "bg-black text-white"
+                  : "bg-gray-200 text-gray-800"
+              }`}>
+                {getEngineBadgeText()}
+              </span>
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              {llmStatus.llm_active
+                ? `Online generative reasoning with grounded spatial/temporal bounding box citations via ${llmStatus.provider || "LLM"}.`
+                : "Deterministic document chunk extraction is active. Add your Groq key below to run Llama 3.3 70B."}
+            </p>
+          </div>
+        </div>
+
         {success && (
-          <div className="mb-6 p-4 bg-green-900/30 border border-green-500/50 rounded-lg">
-            <p className="text-green-400 text-sm">{success}</p>
+          <div className="mb-6 p-3 bg-gray-100 border border-black rounded text-xs text-black font-medium flex items-center gap-2">
+            <CheckCircle2 size={14} />
+            {success}
           </div>
         )}
 
-        {/* Settings Sections */}
-        <div className="space-y-6">
-          {/* Appearance */}
-          <div className="bg-gray-800/50 backdrop-blur-lg border border-gray-700 rounded-2xl p-6">
-            <h2 className="text-xl font-bold text-white mb-4">Appearance</h2>
-
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                {theme === "dark" ? (
-                  <Moon className="text-purple-400" size={24} />
-                ) : (
-                  <Sun className="text-yellow-400" size={24} />
-                )}
-                <div>
-                  <p className="text-white font-medium">Theme</p>
-                  <p className="text-gray-400 text-sm">
-                    {theme === "dark" ? "Dark mode" : "Light mode"}
-                  </p>
-                </div>
-              </div>
-
-              <button
-                onClick={handleThemeToggle}
-                className={`relative w-16 h-8 rounded-full transition-colors ${
-                  theme === "dark" ? "bg-purple-600" : "bg-gray-600"
-                }`}
-              >
-                <div
-                  className={`absolute top-1 left-1 w-6 h-6 bg-white rounded-full transition-transform ${
-                    theme === "dark" ? "translate-x-8" : "translate-x-0"
-                  }`}
-                />
-              </button>
-            </div>
+        {error && (
+          <div className="mb-6 p-3 bg-red-50 border border-red-500 rounded text-xs text-red-700 font-medium">
+            {error}
           </div>
+        )}
 
-          {/* Profile */}
-          <div className="bg-gray-800/50 backdrop-blur-lg border border-gray-700 rounded-2xl p-6">
-            <h2 className="text-xl font-bold text-white mb-4">Profile</h2>
-
-            <form onSubmit={handleSaveProfile} className="space-y-4">
-              {/* Username */}
-              <div>
-                <label className="block text-gray-300 text-sm font-medium mb-2">
-                  Username
-                </label>
-                <div className="relative">
-                  <User
-                    className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500"
-                    size={20}
-                  />
-                  <input
-                    type="text"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    placeholder="Your username"
-                    className="w-full pl-12 pr-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 transition-colors"
-                  />
-                </div>
+        <div className="space-y-6">
+          {/* LLM API Configuration (Groq & Gemini) */}
+          <div className="border border-gray-200 rounded-lg p-6">
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-sm font-semibold text-black uppercase tracking-wider flex items-center gap-2">
+                <Cpu size={16} />
+                AI Engine API Key
+              </h2>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-mono px-2 py-0.5 bg-black text-white rounded">Groq Llama 3.3 70B</span>
+                <span className="text-[11px] font-mono text-gray-400">or Gemini</span>
               </div>
+            </div>
+            <p className="text-xs text-gray-600 mb-4 leading-relaxed">
+              Paste your <strong>Groq API Key</strong> (starts with <code className="font-mono text-xs bg-gray-100 px-1 py-0.5 rounded">gsk_...</code>) from{" "}
+              <a
+                href="https://console.groq.com/keys"
+                target="_blank"
+                rel="noreferrer"
+                className="underline font-semibold text-black hover:text-gray-700"
+              >
+                console.groq.com
+              </a>
+              . ExplainX will run the ultra-fast <strong>Llama 3.3 70B Versatile</strong> model on Groq LPU with zero latency and full citation grounding.
+            </p>
 
-              {/* Email */}
+            <form onSubmit={handleSaveApiKey} className="space-y-4">
               <div>
-                <label className="block text-gray-300 text-sm font-medium mb-2">
-                  Email
+                <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
+                  API Key (Groq or Gemini)
                 </label>
                 <div className="relative">
-                  <Mail
-                    className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500"
-                    size={20}
+                  <Key
+                    className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
+                    size={16}
                   />
                   <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="your@email.com"
-                    className="w-full pl-12 pr-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 transition-colors"
+                    type="password"
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    placeholder="gsk_..."
+                    className="w-full pl-9 pr-3 py-2 bg-white border border-gray-300 rounded text-sm text-black placeholder-gray-400 focus:outline-none focus:border-black font-mono transition-colors"
                   />
                 </div>
               </div>
 
               <button
                 type="submit"
-                disabled={saving}
-                className="w-full py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-lg transition-all font-semibold flex items-center justify-center gap-2 disabled:opacity-50"
+                disabled={savingKey}
+                className="py-2 px-4 bg-black hover:bg-gray-800 text-white rounded text-xs font-medium transition-colors flex items-center gap-1.5 disabled:opacity-50"
               >
-                <Save size={20} />
-                {saving ? "Saving..." : "Save Changes"}
+                <Zap size={14} />
+                {savingKey ? "Activating AI Engine..." : "Save & Activate API Key"}
               </button>
             </form>
           </div>
 
-          {/* API Configuration */}
-          <div className="bg-gray-800/50 backdrop-blur-lg border border-gray-700 rounded-2xl p-6">
-            <h2 className="text-xl font-bold text-white mb-4">
-              API Configuration
+          {/* Profile Section */}
+          <div className="border border-gray-200 rounded-lg p-6">
+            <h2 className="text-sm font-semibold text-black uppercase tracking-wider mb-4">
+              Profile
             </h2>
-            <p className="text-gray-400 text-sm mb-4">
-              Optional: Add your own API keys for extended usage
-            </p>
 
-            <div>
-              <label className="block text-gray-300 text-sm font-medium mb-2">
-                API Key
-              </label>
-              <div className="relative">
-                <Key
-                  className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500"
-                  size={20}
-                />
-                <input
-                  type="password"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="sk-..."
-                  className="w-full pl-12 pr-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 transition-colors"
-                />
+            <form onSubmit={handleSaveProfile} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
+                  Username
+                </label>
+                <div className="relative">
+                  <User
+                    className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
+                    size={16}
+                  />
+                  <input
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    placeholder="Your username"
+                    className="w-full pl-9 pr-3 py-2 bg-white border border-gray-300 rounded text-sm text-black placeholder-gray-400 focus:outline-none focus:border-black transition-colors"
+                  />
+                </div>
               </div>
-              <p className="text-gray-500 text-xs mt-2">
-                Your API key is encrypted and stored securely
-              </p>
-            </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
+                  Email
+                </label>
+                <div className="relative">
+                  <Mail
+                    className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
+                    size={16}
+                  />
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="your@email.com"
+                    className="w-full pl-9 pr-3 py-2 bg-white border border-gray-300 rounded text-sm text-black placeholder-gray-400 focus:outline-none focus:border-black transition-colors"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={savingProfile}
+                className="py-2 px-4 bg-black hover:bg-gray-800 text-white rounded text-xs font-medium transition-colors flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <Save size={14} />
+                {savingProfile ? "Saving..." : "Save Profile Changes"}
+              </button>
+            </form>
           </div>
         </div>
       </div>

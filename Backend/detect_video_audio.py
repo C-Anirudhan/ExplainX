@@ -42,7 +42,7 @@ class gen_json:
                 print("[INFO] Whisper JSON loaded successfully", flush=True)
                 return transcript
         except Exception:
-            print("🔥 ERROR loading Whisper JSON")
+            print("[ERROR] loading Whisper JSON", flush=True)
             traceback.print_exc()
             return []
 
@@ -200,7 +200,7 @@ class gen_json:
             return self.OUTPUT_JSON
 
         except Exception:
-            print("🔥 ERROR IN detect_video_audio.main()")
+            print("[ERROR] IN detect_video_audio.main()", flush=True)
             traceback.print_exc()
             # Ensure we don't leave zombie whisper processes on error
             if whisper_process and whisper_process.is_alive():

@@ -1,152 +1,116 @@
 "use client";
 
 import { Link } from "react-router-dom";
-
-import { useEffect } from "react";
 import {
-  Sparkles,
   Upload,
   MessageSquare,
-  Brain,
+  FileText,
   ArrowRight,
 } from "lucide-react";
 
 export default function HomePage() {
-  useEffect(() => {
-    // Initialize theme on load
-    document.documentElement.classList.add("dark");
-  }, []);
-
   const navigateTo = (path) => {
     window.location.href = path;
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-purple-900">
-      {/* Hero Section */}
-      <div className="relative overflow-hidden">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
-          {/* Header */}
-          <nav className="flex justify-between items-center mb-20">
-            <div className="flex items-center gap-2">
-              <Sparkles className="text-purple-500" size={32} />
-              <h1 className="text-3xl font-bold text-white">ExplainX</h1>
-            </div>
-
-            <div className="flex gap-4">
-              <Link
-                to="/login"
-                className="px-6 py-2 text-white hover:text-purple-400 transition-colors"
-              >
-                Login
-              </Link>
-
-              <Link
-                to="/signup"
-                className="px-6 py-2 bg-gradient-to-r from-purple-600 to-pink-600 
-                          hover:from-purple-700 hover:to-pink-700 
-                          text-white rounded-lg transition-all font-medium"
-              >
-                Sign Up
-              </Link>
-            </div>
-          </nav>
-
-
-
-          {/* Hero Content */}
-          <div className="text-center space-y-8 mb-20">
-            <div className="inline-block">
-              <div className="flex items-center gap-2 bg-purple-900/30 border border-purple-500/30 rounded-full px-4 py-2 mb-6">
-                <Sparkles size={16} className="text-purple-400" />
-                <span className="text-purple-300 text-sm font-medium">
-                  Multimodal RAG System
-                </span>
-              </div>
-            </div>
-
-            <h2 className="text-5xl md:text-7xl font-bold text-white mb-6">
-              Welcome To{" "}
-              <span className="bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
-                ExplainX
-              </span>
-            </h2>
-
-            <p className="text-xl md:text-2xl text-gray-300 max-w-3xl mx-auto">
-              Upload videos, PDFs, presentations, or documents and get
-              intelligent answers using advanced AI. Powered by Whisper, YOLOv8,
-              OCR, and Gemini 2.5 Flash.
-            </p>
-
-            <div className="flex flex-col sm:flex-row gap-4 justify-center items-center pt-8">
-              <button
-                onClick={() => navigateTo("/chat")}
-                className="group px-8 py-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-xl transition-all font-semibold text-lg flex items-center gap-2 shadow-lg"
-              >
-                Get Started
-                <ArrowRight
-                  size={20}
-                  className="group-hover:translate-x-1 transition-transform"
-                />
-              </button>
-              <button
-                onClick={() => navigateTo("/chat")}
-                className="px-8 py-4 border border-purple-500 hover:bg-purple-900/30 text-white rounded-xl transition-all font-semibold text-lg"
-              >
-                Try Demo
-              </button>
-            </div>
+    <div className="min-h-screen bg-white text-black antialiased">
+      {/* Header */}
+      <header className="border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex justify-between items-center">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-xl tracking-tight">ExplainX</span>
           </div>
 
-          {/* Features Grid */}
-          <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
-            <div className="bg-gray-800/50 backdrop-blur-lg border border-gray-700 rounded-2xl p-6 hover:border-purple-500/50 transition-all">
-              <div className="w-12 h-12 bg-purple-600/20 rounded-lg flex items-center justify-center mb-4">
-                <Upload className="text-purple-400" size={24} />
-              </div>
-              <h3 className="text-white text-xl font-bold mb-2">
-                Upload Anything
-              </h3>
-              <p className="text-gray-400">
-                Support for videos, PDFs, PowerPoint, Word documents, images,
-                and more. Any file type accepted.
-              </p>
-            </div>
+          <div className="flex items-center gap-4">
+            <Link
+              to="/login"
+              className="text-sm font-medium text-gray-700 hover:text-black transition-colors"
+            >
+              Login
+            </Link>
 
-            <div className="bg-gray-800/50 backdrop-blur-lg border border-gray-700 rounded-2xl p-6 hover:border-purple-500/50 transition-all">
-              <div className="w-12 h-12 bg-pink-600/20 rounded-lg flex items-center justify-center mb-4">
-                <Brain className="text-pink-400" size={24} />
-              </div>
-              <h3 className="text-white text-xl font-bold mb-2">
-                AI Processing
-              </h3>
-              <p className="text-gray-400">
-                Advanced extraction using Whisper for audio, YOLOv8 for objects,
-                OCR for text, and intelligent parsers.
-              </p>
-            </div>
+            <Link
+              to="/signup"
+              className="px-4 py-2 bg-black text-white hover:bg-gray-800 rounded-md text-sm font-medium transition-colors"
+            >
+              Sign Up
+            </Link>
+          </div>
+        </div>
+      </header>
 
-            <div className="bg-gray-800/50 backdrop-blur-lg border border-gray-700 rounded-2xl p-6 hover:border-purple-500/50 transition-all">
-              <div className="w-12 h-12 bg-blue-600/20 rounded-lg flex items-center justify-center mb-4">
-                <MessageSquare className="text-blue-400" size={24} />
-              </div>
-              <h3 className="text-white text-xl font-bold mb-2">
-                Smart Answers
-              </h3>
-              <p className="text-gray-400">
-                Ask questions and get accurate, context-aware answers powered by
-                Gemini 2.5 Flash and ChromaDB RAG.
-              </p>
-            </div>
+      {/* Hero Section */}
+      <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-24">
+        <div className="text-center space-y-6">
+          <div className="inline-flex items-center gap-2 border border-gray-300 rounded-full px-3 py-1 text-xs font-semibold text-gray-700 uppercase tracking-wider">
+            Multimodal Document & Video Intelligence
+          </div>
+
+          <h1 className="text-5xl sm:text-6xl font-extrabold tracking-tight text-black max-w-3xl mx-auto">
+            Grounded Answers from Mixed-Format Documents
+          </h1>
+
+          <p className="text-lg text-gray-600 max-w-2xl mx-auto">
+            Extract, index, and query PDF documents, presentations, and video feeds with strict source attribution, spatial bounding boxes, and anti-hallucination guardrails.
+          </p>
+
+          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center pt-6">
+            <button
+              onClick={() => navigateTo("/chat")}
+              className="px-6 py-3 bg-black hover:bg-gray-800 text-white rounded-md text-sm font-medium flex items-center gap-2 transition-colors shadow-sm"
+            >
+              Open Workspace
+              <ArrowRight size={16} />
+            </button>
+            <button
+              onClick={() => navigateTo("/chat")}
+              className="px-6 py-3 border border-gray-300 hover:bg-gray-50 text-black rounded-md text-sm font-medium transition-colors"
+            >
+              Try Demo
+            </button>
           </div>
         </div>
 
-        {/* Background decoration */}
-        {/* Background decoration */}
-        <div className="absolute top-0 right-0 w-96 h-96 bg-purple-500 rounded-full filter blur-3xl opacity-10 -z-10 pointer-events-none"></div>
-        <div className="absolute bottom-0 left-0 w-96 h-96 bg-pink-500 rounded-full filter blur-3xl opacity-10 -z-10 pointer-events-none"></div>
+        {/* Features Grid */}
+        <div className="grid md:grid-cols-3 gap-6 mt-24">
+          <div className="border border-gray-200 rounded-lg p-6 hover:border-gray-400 transition-colors">
+            <div className="w-10 h-10 border border-gray-200 rounded-md flex items-center justify-center mb-4">
+              <Upload size={20} className="text-black" />
+            </div>
+            <h2 className="text-base font-semibold text-black mb-1">
+              Multi-Format Ingestion
+            </h2>
+            <p className="text-sm text-gray-600 leading-relaxed">
+              Support for PDFs, PowerPoint presentations, and video lectures. Preserves spatial layout coordinates and table cell structures.
+            </p>
+          </div>
 
-      </div>
+          <div className="border border-gray-200 rounded-lg p-6 hover:border-gray-400 transition-colors">
+            <div className="w-10 h-10 border border-gray-200 rounded-md flex items-center justify-center mb-4">
+              <FileText size={20} className="text-black" />
+            </div>
+            <h2 className="text-base font-semibold text-black mb-1">
+              Spatial Attribution
+            </h2>
+            <p className="text-sm text-gray-600 leading-relaxed">
+              Every factual statement links directly to its source with page number, element type, and bounding-box coordinates.
+            </p>
+          </div>
+
+          <div className="border border-gray-200 rounded-lg p-6 hover:border-gray-400 transition-colors">
+            <div className="w-10 h-10 border border-gray-200 rounded-md flex items-center justify-center mb-4">
+              <MessageSquare size={20} className="text-black" />
+            </div>
+            <h2 className="text-base font-semibold text-black mb-1">
+              Anti-Hallucination Guardrails
+            </h2>
+            <p className="text-sm text-gray-600 leading-relaxed">
+              Strict verification gates trigger refusal when content cannot be directly proven from the ingested documents.
+            </p>
+          </div>
+        </div>
+      </main>
     </div>
   );
 }

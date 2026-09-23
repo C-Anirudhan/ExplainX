@@ -16,6 +16,10 @@ __pycache__/
 .env.*
 !.env.example
 auth.db
+local_db_*.json
+Backend/local_db_*.json
+*.bak
+Backend/*.bak
 
 # Backend-generated media, processing output, and local vector stores
 downloads/

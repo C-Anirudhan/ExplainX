@@ -45,7 +45,7 @@ class VectorDB:
     def ingest_json(self):
         print(f"[INFO] Loading JSON: {self.JSON_PATH}")
         if not os.path.exists(self.JSON_PATH):
-            print(f"❌ ERROR: JSON not found: {self.JSON_PATH}")
+            print(f"[ERROR] JSON not found: {self.JSON_PATH}")
             return
 
         with open(self.JSON_PATH, "r", encoding="utf-8") as f:
@@ -147,7 +147,7 @@ class VectorDB:
                 metadatas=batch_meta
             )
 
-        print("\n🔥 INGESTION COMPLETE — ALL DATA STORED!\n")
+        print("\n[DONE] INGESTION COMPLETE -- ALL DATA STORED!\n")
 
     # ---------------------------------------------------------
     # SIMPLE QUERY (optional)
@@ -199,7 +199,7 @@ class VectorDB:
         print("\n====== RESULTS ======\n")
 
         if not docs:
-            print("❗ No results found.\n")
+            print("[INFO] No results found.\n")
             return
 
         metas = results["metadatas"][0]

@@ -7,9 +7,81 @@ const useChatStore = create((set, get) => ({
   uploadedFiles: [],
   sessions: [],
   sidebarOpen: true,
-  theme: "dark",
+  theme: "light",
   isTyping: false,
   user: null,
+
+  // ============================
+  // WORKSPACE VIEWER STATE
+  // ============================
+  activeFile: null,          // { name, uuid, ext, type: 'document'|'video' }
+  viewerTab: "document",     // "document" | "video"
+  activeHighlight: null,     // { page: 1, bbox: [x0, y0, x1, y1], label: "...", chunk_type: "table" }
+  activeVideoSeek: null,     // { seconds: 134, timestamp: "02:14" }
+  pdfPage: 1,
+  pdfTotalPages: 1,
+  zoom: 1.0,
+
+  setViewerTab: (viewerTab) => set({ viewerTab }),
+  setActiveFile: (activeFile) => set({ activeFile, activeHighlight: null }),
+  setPdfPage: (pdfPage) => set({ pdfPage }),
+  setPdfTotalPages: (pdfTotalPages) => set({ pdfTotalPages }),
+  setZoom: (zoom) => set({ zoom }),
+
+  // HIGHLIGHT CITATION ACTION
+  highlightCitation: (citation) => {
+    if (!citation) return;
+
+    if (citation.type === "document") {
+      const page = citation.page || 1;
+      set({
+        viewerTab: "document",
+        pdfPage: page,
+        activeHighlight: {
+          page: page,
+          bbox: citation.bbox || [0, 0, 0, 0],
+          label: citation.label || `Page ${page}`,
+          chunk_type: citation.chunk_type || "text",
+          doc_name: citation.doc_name || ""
+        }
+      });
+      // Match activeFile if available
+      const { uploadedFiles } = get();
+      if (citation.doc_name && uploadedFiles.length > 0) {
+        const found = uploadedFiles.find(f => 
+          f.name === citation.doc_name || f.real_name === citation.doc_name
+        );
+        if (found) {
+          set({ activeFile: found });
+        }
+      }
+    } else if (citation.type === "video") {
+      set({
+        viewerTab: "video",
+        activeVideoSeek: {
+          seconds: citation.seconds || 0,
+          timestamp: citation.timestamp || "00:00",
+          video_name: citation.video_name || ""
+        }
+      });
+      const { uploadedFiles } = get();
+      if (uploadedFiles && uploadedFiles.length > 0) {
+        const found = uploadedFiles.find(f => 
+          f.name === citation.video_name || 
+          f.real_name === citation.video_name ||
+          f.uuid === citation.video_name ||
+          (f.source_url && f.source_url === citation.video_name)
+        ) || uploadedFiles.find(f => 
+          f.type === "video" || 
+          (f.ext && [".mp4", ".mov", ".webm", ".avi", ".mkv"].includes(f.ext.toLowerCase())) ||
+          (f.name && (f.name.includes("youtube.com") || f.name.includes("youtu.be")))
+        );
+        if (found) {
+          set({ activeFile: found });
+        }
+      }
+    }
+  },
 
   // ============================
   // USER
@@ -44,24 +116,43 @@ const useChatStore = create((set, get) => ({
     })),
 
   addFile: (file) =>
-    set((state) => ({
-      uploadedFiles: [...state.uploadedFiles, file],
-    })),
+    set((state) => {
+      const isVideo = file.name.match(/\.(mp4|mov|avi|mkv|webm)$/i);
+      const fileObj = {
+        name: file.name,
+        ext: isVideo ? ".mp4" : ".pdf",
+        type: isVideo ? "video" : "document",
+        size: file.size
+      };
+      return {
+        uploadedFiles: [...state.uploadedFiles, fileObj],
+        activeFile: state.activeFile || fileObj,
+        viewerTab: isVideo ? "video" : "document"
+      };
+    }),
+
+  updateFileUuid: (fileName, uuid) =>
+    set((state) => {
+      const updated = state.uploadedFiles.map((f) =>
+        f.name === fileName ? { ...f, uuid } : f
+      );
+      const active = state.activeFile?.name === fileName
+        ? { ...state.activeFile, uuid }
+        : state.activeFile;
+      return { uploadedFiles: updated, activeFile: active };
+    }),
 
   // ============================
   // CREATE NEW SESSION (BACKEND)
   // ============================
   startNewConversation: async () => {
     try {
-        // 1. Create on Backend
         const res = await apiService.createSession();
         const newSessionId = res.session_id;
 
-        // 2. Refresh Sidebar List
         const sessions = await apiService.getSessions();
         set({ sessions });
 
-        // 3. Update State
         localStorage.setItem("session_id", newSessionId);
 
         set({
@@ -69,11 +160,14 @@ const useChatStore = create((set, get) => ({
             messages: [
                 {
                     role: "system",
-                    content: "Welcome To ExplainX",
+                    content: "Welcome to ExplainX Multimodal Truth Engine.",
                     timestamp: new Date().toISOString(),
                 },
             ],
             uploadedFiles: [],
+            activeFile: null,
+            activeHighlight: null,
+            activeVideoSeek: null,
         });
 
         return newSessionId;
@@ -83,27 +177,38 @@ const useChatStore = create((set, get) => ({
   },
 
   // ============================
-  // LOAD SESSION (FIXED MAPPING)
+  // LOAD SESSION
   // ============================
   loadSession: async (sessionId) => {
     set({ isTyping: true });
     try {
-        // 1. Fetch real history from Backend
         const history = await apiService.getHistory(sessionId);
-        
-        // 2. MAP BACKEND DATA TO FRONTEND FORMAT
-        // Backend uses 'text' & 'time', Frontend uses 'content' & 'timestamp'
+        const { sessions } = get();
+        const currentSess = sessions.find(s => s.id === sessionId);
+        const sessFiles = (currentSess?.files || []).map(f => ({
+          ...f,
+          type: f.ext?.match(/\.(mp4|mov|avi|mkv|webm)$/i) ? "video" : "document"
+        }));
+
         const cleanMessages = (history.messages || []).map(msg => ({
             role: msg.role,
-            content: msg.text || msg.content || "",  // 🔥 FIX: Use 'text' if 'content' is missing
+            content: msg.text || msg.content || "",
+            citations: msg.citations || [],
+            verified: msg.verified || false,
+            refusal: msg.refusal || false,
             timestamp: msg.time || msg.timestamp || new Date().toISOString()
         }));
 
-        // 3. Update State
+        const initialFile = sessFiles.length > 0 ? sessFiles[0] : null;
+
         set({
             currentSessionId: sessionId,
             messages: cleanMessages,
-            uploadedFiles: [],
+            uploadedFiles: sessFiles,
+            activeFile: initialFile,
+            viewerTab: initialFile?.type === "video" ? "video" : "document",
+            activeHighlight: null,
+            activeVideoSeek: null,
         });
         
         localStorage.setItem("session_id", sessionId);
@@ -119,17 +224,15 @@ const useChatStore = create((set, get) => ({
       sessions: [session, ...state.sessions],
     })),
 
-  clearMessages: () => set({ messages: [], uploadedFiles: [] }),
+  clearMessages: () => set({ messages: [], uploadedFiles: [], activeFile: null }),
 
   // ============================
   // INITIALIZE APP
   // ============================
   initialize: async () => {
-    // Load theme
     const theme = localStorage.getItem("theme") || "dark";
     get().setTheme(theme);
 
-    // Load Sidebar List from BACKEND
     try {
         const sessions = await apiService.getSessions();
         set({ sessions });
@@ -137,33 +240,25 @@ const useChatStore = create((set, get) => ({
         console.error("Failed to fetch sessions list:", error);
     }
 
-    // Determine Session ID
     let sessionId = localStorage.getItem("session_id");
     const { sessions } = get();
-    
-    // Check if the saved session actually exists in our backend list
     const exists = sessions.find(s => s.id === sessionId);
 
     if (!sessionId || !exists) {
         if (sessions.length > 0) {
-            // If we have sessions, load the most recent one
             sessionId = sessions[0].id;
         } else {
-            // Only create a new one if the list is totally empty
             const res = await apiService.createSession();
             sessionId = res.session_id;
-            // Refresh list
             const newSessions = await apiService.getSessions();
             set({ sessions: newSessions });
         }
         localStorage.setItem("session_id", sessionId);
     }
 
-    // Load the messages for the selected session
     await get().loadSession(sessionId);
   },
 
-  // Empty function to prevent errors if UI calls it
   persistSessions: () => {},
 }));
 

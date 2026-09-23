@@ -1,73 +1,57 @@
-from ultralytics import YOLO
+import os
 import cv2 as cv
 import torch
+
+try:
+    from ultralytics import YOLO
+except ImportError:
+    YOLO = None
 
 
 class YOLOv8Detector:
     def __init__(self, model_name="yolov8n.pt"):
-        print(f"Loading YOLOv8 model: {model_name} ...")
-
-        self.model = YOLO(model_name)
-
         self.last_results = []
+        if YOLO is None:
+            print("[INFO] ultralytics not installed. YOLO detector running in stub mode.")
+            self.model = None
+            return
 
-        if torch.cuda.is_available():
-            self.device = "cuda"
-            print("CUDA detected. Running on GPU.")
-            self.model.to(self.device)
-        else:
-            self.device = "cpu"
-            print("CUDA not found. Running on CPU.")
-
-        print("Model loaded successfully.\n")
-
+        try:
+            print(f"Loading YOLOv8 model: {model_name} ...")
+            self.model = YOLO(model_name)
+            if torch.cuda.is_available():
+                self.device = "cuda"
+                self.model.to(self.device)
+            else:
+                self.device = "cpu"
+            print("Model loaded successfully.\n")
+        except Exception as e:
+            print(f"[WARN] Failed to load YOLO model: {e}")
+            self.model = None
 
     def detect(self, frame):
-        # Reset last detections
+        if not self.model:
+            self.last_results = []
+            return []
+
+        results = self.model(frame, verbose=False)
         self.last_results = []
 
-        # Run inference
-        results = self.model(
-            frame,
-            imgsz=480,
-            half=(self.device == "cuda"),
-            verbose=False
-        )[0]
+        for r in results:
+            boxes = r.boxes
+            for box in boxes:
+                cls_id = int(box.cls[0])
+                label = self.model.names[cls_id]
+                conf = float(box.conf[0])
+                coords = [int(x) for x in box.xyxy[0]]
 
-        # Loop detections
-        for box in results.boxes:
-            xyxy = box.xyxy[0].cpu().tolist()  # <-- JSON-SAFE PYTHON LIST
+                self.last_results.append({
+                    "label": label,
+                    "confidence": conf,
+                    "box": coords
+                })
 
-            x1 = int(xyxy[0])
-            y1 = int(xyxy[1])
-            x2 = int(xyxy[2])
-            y2 = int(xyxy[3])
-
-            conf = float(box.conf.cpu().numpy().item())
-            cls = int(box.cls.cpu().numpy().item())
-            label = str(results.names[cls])
-
-            # Store JSON-safe output
-            self.last_results.append({
-                "label": label,
-                "confidence": conf,
-                "box": [x1, y1, x2, y2]
-            })
-
-            # Draw boxes
-            cv.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-            cv.putText(
-                frame,
-                f"{label} {conf:.2f}",
-                (x1, y1 - 6),
-                cv.FONT_HERSHEY_SIMPLEX,
-                0.6,
-                (0, 255, 0),
-                2
-            )
-
-        return frame
-
+        return self.last_results
 
     def export_last_results(self):
         return self.last_results

@@ -57,76 +57,68 @@ export default function Sidebar() {
 
       {/* Sidebar */}
       <div
-        className={`fixed md:relative top-0 left-0 h-full bg-[#0f0f0f] border-r border-gray-800 transition-all duration-300 z-40 flex flex-col ${
-          sidebarOpen ? "w-80" : "w-0 md:w-0"
+        className={`fixed md:relative top-0 left-0 h-full bg-white border-r border-gray-200 transition-all duration-300 z-40 flex flex-col ${
+          sidebarOpen ? "w-72" : "w-0 md:w-0"
         } overflow-hidden`}
       >
         {/* User info */}
-        <div className="p-4 border-b border-gray-800">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white font-semibold">
+        <div className="p-3.5 border-b border-gray-200">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded bg-black text-white flex items-center justify-center text-xs font-semibold">
               {user?.name?.[0]?.toUpperCase() || "U"}
-
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-white font-medium truncate">
-                {user?.name || "Guest User"}
-
+              <p className="text-black text-xs font-semibold truncate">
+                {user?.name || "User"}
               </p>
-              <p className="text-gray-400 text-sm truncate">
-                {user?.email || "guest@explainx.ai"}
+              <p className="text-gray-400 text-[10px] font-mono truncate">
+                {user?.email || "user@explainx.ai"}
               </p>
             </div>
           </div>
         </div>
 
         {/* New Conversation Button */}
-        <div className="p-4">
+        <div className="p-3">
           <button
             onClick={handleNewConversation}
-            className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition-all font-medium shadow-lg"
+            className="w-full bg-black hover:bg-gray-800 text-white py-2 px-3 rounded text-xs flex items-center justify-center gap-2 transition-all font-medium"
           >
-            <MessageSquarePlus size={20} />
-            New Conversation
+            <MessageSquarePlus size={15} />
+            New Chat
           </button>
         </div>
 
         {/* History Section */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-2">
-          <h3 className="text-gray-400 text-sm font-semibold mb-3 flex items-center gap-2">
-            <Clock size={16} />
+        <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
+          <h3 className="text-gray-500 text-[11px] font-mono uppercase tracking-wider mb-2 flex items-center gap-1.5">
+            <Clock size={12} />
             History
           </h3>
 
           {sessions.length === 0 ? (
-            <div className="text-gray-500 text-sm text-center py-8">
-              No previous conversations
+            <div className="text-gray-400 text-xs text-center py-6 font-mono">
+              No history
             </div>
           ) : (
             sessions.map((session) => (
               <button
                 key={session.id}
                 onClick={() => handleLoadSession(session.id)}
-                className={`w-full text-left p-3 rounded-lg transition-all ${
+                className={`w-full text-left p-2.5 rounded transition-all text-xs ${
                   currentSessionId === session.id
-                    ? "bg-gray-800 border border-purple-500"
-                    : "bg-gray-900 hover:bg-gray-800 border border-transparent"
+                    ? "bg-gray-100 border border-gray-300 text-black font-medium"
+                    : "text-gray-600 hover:bg-gray-50 hover:text-black border border-transparent"
                 }`}
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
-                    <p className="text-white text-sm font-medium truncate mb-1">
+                    <p className="truncate mb-0.5">
                       {session.title}
                     </p>
-                    <p className="text-gray-400 text-xs">
+                    <p className="text-gray-400 text-[10px] font-mono">
                       {formatTimestamp(session.timestamp)}
                     </p>
-                    {session.files && session.files.length > 0 && (
-                      <p className="text-gray-500 text-xs mt-1">
-                        {session.files.length} file
-                        {session.files.length > 1 ? "s" : ""}
-                      </p>
-                    )}
                   </div>
                 </div>
               </button>
@@ -135,12 +127,12 @@ export default function Sidebar() {
         </div>
 
         {/* Desktop toggle */}
-        <div className="hidden md:block p-4 border-t border-gray-800">
+        <div className="hidden md:block p-3 border-t border-gray-200">
           <button
             onClick={toggleSidebar}
-            className="w-full text-gray-400 hover:text-white py-2 px-4 rounded-lg hover:bg-gray-800 transition-all text-sm flex items-center justify-center gap-2"
+            className="w-full text-gray-500 hover:text-black py-1.5 px-3 rounded hover:bg-gray-100 transition-all text-xs flex items-center justify-center gap-2"
           >
-            <Menu size={16} />
+            <Menu size={14} />
             Collapse
           </button>
         </div>

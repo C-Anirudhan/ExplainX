@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Sparkles, Mail, Lock, User, ArrowRight } from "lucide-react";
+import { Mail, Lock, User, ArrowRight } from "lucide-react";
 import useChatStore from "@/store/chatStore";
 import apiService from "@/services/api";
 
@@ -15,107 +15,90 @@ export default function SignupPage() {
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e) => {
-  e.preventDefault();
-  setError("");
-  setLoading(true);
+    e.preventDefault();
+    setError("");
+    setLoading(true);
 
-  try {
-    // 1️⃣ Create account
-    const signupRes = await apiService.signup(email, username, password);
-
-    // 2️⃣ Auto-login
-    const loginRes = await apiService.login(email, password);
-
-    // 3️⃣ Update global user store
-    setUser(loginRes.user);
-
-    // 4️⃣ Redirect to chat
-    window.location.href = "/chat";
-  } catch (err) {
-    console.error("Signup error:", err);
-    setError("Failed to create account. Please try again.");
-  } finally {
-    setLoading(false);
-  }
-};
-
+    try {
+      await apiService.signup(email, username, password);
+      const loginRes = await apiService.login(email, password);
+      setUser(loginRes.user);
+      window.location.href = "/chat";
+    } catch (err) {
+      console.error("Signup error:", err);
+      setError("Failed to create account. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-purple-900 flex items-center justify-center p-4">
-      {/* Background decoration */}
-      <div className="absolute top-0 right-0 w-96 h-96 bg-purple-500 rounded-full filter blur-3xl opacity-10"></div>
-      <div className="absolute bottom-0 left-0 w-96 h-96 bg-pink-500 rounded-full filter blur-3xl opacity-10"></div>
+    <div className="min-h-screen bg-white text-black flex items-center justify-center p-4">
+      <div className="w-full max-w-sm">
+        {/* Header */}
+        <div className="text-center mb-8">
+          <a href="/" className="inline-block font-bold text-2xl tracking-tight text-black mb-2">
+            ExplainX
+          </a>
+          <p className="text-sm text-gray-600">Create a new account</p>
+        </div>
 
-      {/* Signup Card */}
-      <div className="relative w-full max-w-md">
-        {/* Logo */}
-        <a href="/" className="flex items-center justify-center gap-2 mb-8">
-          <Sparkles className="text-purple-500" size={32} />
-          <h1 className="text-3xl font-bold text-white">ExplainX</h1>
-        </a>
-
-        <div className="bg-gray-800/50 backdrop-blur-lg border border-gray-700 rounded-2xl p-8 shadow-2xl">
-          <h2 className="text-2xl font-bold text-white mb-2">Create account</h2>
-          <p className="text-gray-400 mb-8">Get started with ExplainX today</p>
-
+        <div className="border border-gray-200 rounded-lg p-6 shadow-sm">
           {error && (
-            <div className="mb-6 p-4 bg-red-900/30 border border-red-500/50 rounded-lg">
-              <p className="text-red-400 text-sm">{error}</p>
+            <div className="mb-4 p-3 bg-gray-50 border border-black rounded text-xs text-black font-medium">
+              {error}
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Email */}
+          <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-gray-300 text-sm font-medium mb-2">
+              <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
                 Email
               </label>
               <div className="relative">
                 <Mail
-                  className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500"
-                  size={20}
+                  className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
+                  size={16}
                 />
                 <input
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@example.com"
+                  placeholder="name@company.com"
                   required
-                  className="w-full pl-12 pr-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 transition-colors"
+                  className="w-full pl-9 pr-3 py-2 bg-white border border-gray-300 rounded text-sm text-black placeholder-gray-400 focus:outline-none focus:border-black transition-colors"
                 />
               </div>
             </div>
 
-            {/* Username */}
             <div>
-              <label className="block text-gray-300 text-sm font-medium mb-2">
+              <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
                 Username
               </label>
               <div className="relative">
                 <User
-                  className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500"
-                  size={20}
+                  className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
+                  size={16}
                 />
                 <input
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder="johndoe"
+                  placeholder="username"
                   required
-                  className="w-full pl-12 pr-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 transition-colors"
+                  className="w-full pl-9 pr-3 py-2 bg-white border border-gray-300 rounded text-sm text-black placeholder-gray-400 focus:outline-none focus:border-black transition-colors"
                 />
               </div>
             </div>
 
-            {/* Password */}
             <div>
-              <label className="block text-gray-300 text-sm font-medium mb-2">
+              <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
                 Password
               </label>
               <div className="relative">
                 <Lock
-                  className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500"
-                  size={20}
+                  className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
+                  size={16}
                 />
                 <input
                   type="password"
@@ -123,33 +106,29 @@ export default function SignupPage() {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   required
-                  className="w-full pl-12 pr-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 transition-colors"
+                  className="w-full pl-9 pr-3 py-2 bg-white border border-gray-300 rounded text-sm text-black placeholder-gray-400 focus:outline-none focus:border-black transition-colors"
                 />
               </div>
             </div>
 
-            {/* Submit Button */}
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-lg transition-all font-semibold flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full mt-2 py-2.5 bg-black hover:bg-gray-800 text-white rounded text-sm font-medium transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading ? "Creating account..." : "Create account"}
-              {!loading && <ArrowRight size={20} />}
+              {loading ? "Creating account..." : "Create Account"}
+              {!loading && <ArrowRight size={16} />}
             </button>
           </form>
 
-          {/* Login link */}
-          <div className="mt-6 text-center">
-            <p className="text-gray-400">
-              Already have an account?{" "}
-              <a
-                href="/login"
-                className="text-purple-400 hover:text-purple-300 font-medium"
-              >
-                Sign in
-              </a>
-            </p>
+          <div className="mt-6 text-center text-xs text-gray-600">
+            Already have an account?{" "}
+            <a
+              href="/login"
+              className="font-medium text-black hover:underline"
+            >
+              Sign in
+            </a>
           </div>
         </div>
       </div>

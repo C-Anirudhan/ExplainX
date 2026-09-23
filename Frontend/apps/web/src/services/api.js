@@ -87,8 +87,8 @@ class ApiService {
   // UI calls: apiService.uploadFile(sessionId, file)
   async uploadFile(sessionId, file) {
   const formData = new FormData();
-  formData.append("session_id", sessionId);   // ✔ Correct key
-  formData.append("file", file);              // ✔ Correct key
+  formData.append("session_id", sessionId);   // Correct key
+  formData.append("file", file);              // Correct key
 
   const token = localStorage.getItem("token");
 
@@ -133,6 +133,23 @@ class ApiService {
 
   async getSessions() {
     return this.request("/api/sessions", {
+      method: "GET",
+    });
+  }
+
+  // ====================================================
+  // SETTINGS & PROFILE
+  // ====================================================
+
+  async updateProfile(data) {
+    return this.request("/api/settings/profile", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getSettingsStatus() {
+    return this.request("/api/settings/status", {
       method: "GET",
     });
   }

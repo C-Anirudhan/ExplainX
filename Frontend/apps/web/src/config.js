@@ -1,1 +1,1 @@
-export const API_BASE = "http://192.168.137.123:8080";
+export const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
